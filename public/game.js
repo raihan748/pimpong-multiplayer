@@ -1,10 +1,14 @@
 // ============================================================================
-// NEON PONG: CYBER CLASH — CLIENT ENGINE (SOCKET.IO, CANVAS 2D, WEB AUDIO)
+// NEON PONG: CYBER CLASH — ULTRA UPGRADED CLIENT ENGINE
 // ============================================================================
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
 
-// Virtual Arena Dimensions (matches server)
+// Virtual Arena Dimensions
 const ARENA_WIDTH = 1000;
 const ARENA_HEIGHT = 600;
 
@@ -17,9 +21,20 @@ const screenLobby = document.getElementById('screen-lobby');
 const screenHud = document.getElementById('screen-hud');
 const screenMatchEnd = document.getElementById('screen-match-end');
 const modalCodex = document.getElementById('modal-codex');
+const crtOverlay = document.getElementById('crt-overlay');
+const eqBars = document.querySelectorAll('.eq-bar');
+
+// Settings Toolbar
+const btnToggleBgm = document.getElementById('btn-toggle-bgm');
+const btnToggleSfx = document.getElementById('btn-toggle-sfx');
+const btnToggleCrt = document.getElementById('btn-toggle-crt');
+const btnOpenCodexToolbar = document.getElementById('btn-open-codex-toolbar');
 
 // Menu Controls
 const inputPlayerName = document.getElementById('player-name');
+const btnQuickMatch = document.getElementById('btn-quick-match');
+const quickMatchText = document.getElementById('quick-match-text');
+const btnSoloAi = document.getElementById('btn-solo-ai');
 const btnCreateRoom = document.getElementById('btn-create-room');
 const inputJoinCode = document.getElementById('join-room-code');
 const btnJoinRoom = document.getElementById('btn-join-room');
@@ -30,6 +45,7 @@ const btnCloseCodex = document.getElementById('btn-close-codex');
 // Lobby Controls
 const lobbyRoomCode = document.getElementById('lobby-room-code');
 const btnCopyCode = document.getElementById('btn-copy-code');
+const spectatorsBadge = document.getElementById('spectators-badge');
 const hostNameEl = document.getElementById('host-name');
 const guestNameEl = document.getElementById('guest-name');
 const hostPreviewPaddle = document.getElementById('host-preview-paddle');
@@ -46,10 +62,13 @@ const hudHostScore = document.getElementById('hud-host-score');
 const hudGuestScore = document.getElementById('hud-guest-score');
 const pingIndicator = document.getElementById('ping-indicator');
 const rallyIndicator = document.getElementById('rally-indicator');
+const spectatorHudBadge = document.getElementById('spectator-hud-badge');
 const energyProgressFill = document.getElementById('energy-progress-fill');
 const energyNumeric = document.getElementById('energy-numeric');
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownNumber = document.getElementById('countdown-number');
+const comboBanner = document.getElementById('combo-banner');
+const comboText = document.getElementById('combo-text');
 const disconnectOverlay = document.getElementById('disconnect-overlay');
 const disconnectTimerDisplay = document.getElementById('disconnect-timer-display');
 const abilityButtons = document.querySelectorAll('.ability-btn');
@@ -78,17 +97,20 @@ const btnLeaveMatch = document.getElementById('btn-leave-match');
 const toastContainer = document.getElementById('toast-container');
 
 // Client State
-let myRole = null; // 'host' or 'guest'
+let myRole = null; // 'host', 'guest', or 'spectator'
 let myRoomCode = null;
 let selectedColor = '#00ffff';
 let isReady = false;
+let isQueueingMatch = false;
 let currentScreen = 'screen-menu';
-let pingInterval = null;
+let isSfxEnabled = true;
+let isBgmEnabled = false;
+let isCrtEnabled = true;
 
-// Visual Interpolation & Render State
+// Render & Interpolation State
 let latestSnapshot = null;
 const renderState = {
-  ball: { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, radius: 10, isSmash: false },
+  balls: [{ x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, radius: 10, isSmash: false }],
   paddles: {
     host: { x: 35, y: 245, height: 110, color: '#00ffff' },
     guest: { x: ARENA_WIDTH - 49, y: 245, height: 110, color: '#ff0077' }
@@ -97,7 +119,8 @@ const renderState = {
     host: { x: 160, y: 300, active: false },
     guest: { x: ARENA_WIDTH - 160, y: 300, active: false }
   },
-  vortex: { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, radius: 110, active: false, angle: 0 }
+  vortex: { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, radius: 110, active: false, angle: 0 },
+  powerUp: null
 };
 
 // FX State
@@ -105,28 +128,106 @@ let screenShake = 0;
 const particles = [];
 const shockwaves = [];
 const floatTexts = [];
-const ballTrail = [];
+const ballTrails = new Map(); // id -> trail array
+let prevRally = 0;
 
 // ============================================================================
-// 1. PROCEDURAL WEB AUDIO SYNTHESIZER
+// 1. ADVANCED PROCEDURAL SYNTH AUDIO ENGINE & BGM
 // ============================================================================
 class SynthAudioEngine {
   constructor() {
     this.ctx = null;
+    this.bgmTimer = null;
+    this.bgmStep = 0;
+    // Synthwave Chord Progression: Am -> F -> C -> G
+    this.bassNotes = [
+      110, 110, 164.81, 110, 110, 110, 164.81, 110, // A2, E3
+      87.31, 87.31, 130.81, 87.31, 87.31, 87.31, 130.81, 87.31, // F2, C3
+      130.81, 130.81, 196.00, 130.81, 130.81, 130.81, 196.00, 130.81, // C3, G3
+      98.00, 98.00, 146.83, 98.00, 98.00, 98.00, 146.83, 98.00  // G2, D3
+    ];
   }
 
   init() {
     if (!this.ctx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AudioContext();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioCtx();
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
   }
 
-  play(type) {
-    if (!this.ctx) return;
+  startBgm() {
+    this.init();
+    if (this.bgmTimer) return;
+    this.bgmStep = 0;
+    const tempoMs = 125; // 120 BPM 16th notes
+    this.bgmTimer = setInterval(() => {
+      if (!isBgmEnabled) return;
+      this.playBgmStep();
+    }, tempoMs);
+  }
+
+  stopBgm() {
+    if (this.bgmTimer) {
+      clearInterval(this.bgmTimer);
+      this.bgmTimer = null;
+    }
+  }
+
+  playBgmStep() {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const now = this.ctx.currentTime;
+    const step = this.bgmStep % this.bassNotes.length;
+    const freq = this.bassNotes[step];
+
+    // Synth Bass Arpeggio Note
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(freq, now);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, now);
+    filter.frequency.exponentialRampToValueAtTime(150, now + 0.1);
+
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.11);
+
+    // 4-on-the-floor Cyber Kick Drum on beats 0, 4, 8, 12, etc.
+    if (step % 4 === 0) {
+      const kickOsc = this.ctx.createOscillator();
+      const kickGain = this.ctx.createGain();
+      kickOsc.type = 'sine';
+      kickOsc.frequency.setValueAtTime(150, now);
+      kickOsc.frequency.exponentialRampToValueAtTime(30, now + 0.12);
+      kickGain.gain.setValueAtTime(0.2, now);
+      kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      kickOsc.connect(kickGain);
+      kickGain.connect(this.ctx.destination);
+      kickOsc.start(now);
+      kickOsc.stop(now + 0.13);
+    }
+
+    // Animate UI Equalizer Ribbon
+    animateEqualizer();
+    this.bgmStep++;
+  }
+
+  playSfx(type) {
+    if (!isSfxEnabled) return;
+    this.init();
+    if (!this.ctx || this.ctx.state !== 'running') return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -134,84 +235,92 @@ class SynthAudioEngine {
     gain.connect(this.ctx.destination);
 
     switch (type) {
-      case 'hit': {
+      case 'hit':
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(450, now);
         osc.frequency.exponentialRampToValueAtTime(180, now + 0.08);
         gain.gain.setValueAtTime(0.25, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
         osc.start(now);
         osc.stop(now + 0.08);
         break;
-      }
-      case 'smash': {
+
+      case 'smash':
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(220, now);
-        osc.frequency.exponentialRampToValueAtTime(40, now + 0.35);
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(35, now + 0.38);
         gain.gain.setValueAtTime(0.5, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
         osc.start(now);
-        osc.stop(now + 0.35);
+        osc.stop(now + 0.38);
         break;
-      }
-      case 'parry': {
-        // High harmonic ping clash
+
+      case 'parry':
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.setValueAtTime(1320, now + 0.05);
-        osc.frequency.exponentialRampToValueAtTime(300, now + 0.3);
+        osc.frequency.setValueAtTime(900, now);
+        osc.frequency.setValueAtTime(1350, now + 0.05);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.3);
         gain.gain.setValueAtTime(0.55, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
         osc.start(now);
         osc.stop(now + 0.3);
         break;
-      }
-      case 'drone': {
+
+      case 'drone':
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(800, now);
-        osc.frequency.exponentialRampToValueAtTime(250, now + 0.15);
+        osc.frequency.setValueAtTime(820, now);
+        osc.frequency.exponentialRampToValueAtTime(260, now + 0.16);
         gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
         osc.start(now);
-        osc.stop(now + 0.15);
+        osc.stop(now + 0.16);
         break;
-      }
-      case 'vortex': {
+
+      case 'vortex':
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.setValueAtTime(150, now);
         osc.frequency.exponentialRampToValueAtTime(50, now + 0.45);
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
         osc.start(now);
         osc.stop(now + 0.45);
         break;
-      }
-      case 'malware': {
+
+      case 'malware':
         osc.type = 'square';
-        osc.frequency.setValueAtTime(1100, now);
-        osc.frequency.setValueAtTime(350, now + 0.08);
-        osc.frequency.setValueAtTime(800, now + 0.15);
+        osc.frequency.setValueAtTime(1150, now);
+        osc.frequency.setValueAtTime(380, now + 0.08);
+        osc.frequency.setValueAtTime(850, now + 0.15);
         osc.frequency.exponentialRampToValueAtTime(70, now + 0.35);
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
         osc.start(now);
         osc.stop(now + 0.35);
         break;
-      }
-      case 'shield': {
+
+      case 'shield':
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(240, now);
-        osc.frequency.exponentialRampToValueAtTime(700, now + 0.25);
+        osc.frequency.exponentialRampToValueAtTime(720, now + 0.25);
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
         osc.start(now);
         osc.stop(now + 0.25);
         break;
-      }
-      case 'goal': {
-        // Retro synth harmonic fanfare
-        const chord = [330, 440, 550, 660];
-        chord.forEach((freq, idx) => {
+
+      case 'powerup':
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.08);
+        osc.frequency.setValueAtTime(783.99, now + 0.16);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+        break;
+
+      case 'goal':
+        [330, 440, 550, 660].forEach((freq, idx) => {
           const o = this.ctx.createOscillator();
           const g = this.ctx.createGain();
           o.type = 'sine';
@@ -224,8 +333,8 @@ class SynthAudioEngine {
           o.stop(now + 0.5 + idx * 0.08);
         });
         break;
-      }
-      case 'countdown_tick': {
+
+      case 'countdown_tick':
         osc.type = 'sine';
         osc.frequency.setValueAtTime(520, now);
         gain.gain.setValueAtTime(0.25, now);
@@ -233,8 +342,8 @@ class SynthAudioEngine {
         osc.start(now);
         osc.stop(now + 0.12);
         break;
-      }
-      case 'countdown_start': {
+
+      case 'countdown_start':
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(1040, now);
         gain.gain.setValueAtTime(0.4, now);
@@ -242,16 +351,15 @@ class SynthAudioEngine {
         osc.start(now);
         osc.stop(now + 0.4);
         break;
-      }
-      case 'click': {
+
+      case 'click':
         osc.type = 'sine';
         osc.frequency.setValueAtTime(800, now);
-        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.setValueAtTime(0.08, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.04);
         osc.start(now);
         osc.stop(now + 0.04);
         break;
-      }
     }
   }
 }
@@ -261,8 +369,46 @@ window.addEventListener('click', () => sfx.init(), { once: true });
 window.addEventListener('keydown', () => sfx.init(), { once: true });
 window.addEventListener('touchstart', () => sfx.init(), { once: true });
 
+function animateEqualizer() {
+  eqBars.forEach((bar) => {
+    const height = Math.floor(Math.random() * 10 + 2);
+    bar.style.height = `${height}px`;
+  });
+}
+
 // ============================================================================
-// 2. PARTICLES & JUICE FX ENGINE
+// 2. SETTINGS TOOLBAR HANDLERS
+// ============================================================================
+btnToggleBgm.addEventListener('click', () => {
+  sfx.init();
+  isBgmEnabled = !isBgmEnabled;
+  btnToggleBgm.classList.toggle('active', isBgmEnabled);
+  btnToggleBgm.innerText = isBgmEnabled ? '🎵 BGM: ON' : '🎵 BGM: OFF';
+  if (isBgmEnabled) sfx.startBgm();
+  else sfx.stopBgm();
+});
+
+btnToggleSfx.addEventListener('click', () => {
+  isSfxEnabled = !isSfxEnabled;
+  btnToggleSfx.classList.toggle('active', isSfxEnabled);
+  btnToggleSfx.innerText = isSfxEnabled ? '🔊 SFX: ON' : '🔇 SFX: OFF';
+  if (isSfxEnabled) sfx.playSfx('click');
+});
+
+btnToggleCrt.addEventListener('click', () => {
+  isCrtEnabled = !isCrtEnabled;
+  btnToggleCrt.classList.toggle('active', isCrtEnabled);
+  btnToggleCrt.innerText = isCrtEnabled ? '📺 CRT: ON' : '📺 CRT: OFF';
+  crtOverlay.classList.toggle('disabled', !isCrtEnabled);
+});
+
+btnOpenCodexToolbar.addEventListener('click', () => {
+  modalCodex.classList.remove('hidden');
+  sfx.playSfx('click');
+});
+
+// ============================================================================
+// 3. PARTICLES, SHOCKWAVES & FX
 // ============================================================================
 class Particle {
   constructor(x, y, color, speed = 6) {
@@ -308,7 +454,7 @@ class Shockwave {
   }
   update() {
     this.radius += (this.maxRadius - this.radius) * 0.14 + 3;
-    this.alpha = 1 - (this.radius / this.maxRadius);
+    this.alpha = 1 - this.radius / this.maxRadius;
   }
   draw(ctx, scaleX, scaleY) {
     if (this.alpha <= 0) return;
@@ -365,11 +511,17 @@ function showToast(msg) {
   setTimeout(() => toast.remove(), 3000);
 }
 
+function triggerComboCallout(text) {
+  comboText.innerText = text;
+  comboBanner.classList.remove('hidden');
+  setTimeout(() => comboBanner.classList.add('hidden'), 900);
+}
+
 // ============================================================================
-// 3. UI SCREEN MANAGEMENT
+// 4. SCREEN VIEW SWITCHING
 // ============================================================================
 function switchScreen(screenId) {
-  [screenMenu, screenLobby, screenHud, screenMatchEnd].forEach(el => {
+  [screenMenu, screenLobby, screenHud, screenMatchEnd].forEach((el) => {
     el.classList.remove('active');
   });
   const target = document.getElementById(screenId);
@@ -377,83 +529,119 @@ function switchScreen(screenId) {
   currentScreen = screenId;
 }
 
-// Color Picker handler
-colorButtons.forEach(btn => {
+// Color Picker
+colorButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
-    colorButtons.forEach(b => b.classList.remove('active'));
+    colorButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     selectedColor = btn.dataset.color;
-    sfx.play('click');
+    sfx.playSfx('click');
   });
 });
 
-// Codex Modal
+// Codex Modals
 btnOpenCodex.addEventListener('click', () => {
   modalCodex.classList.remove('hidden');
-  sfx.play('click');
+  sfx.playSfx('click');
 });
 btnCloseCodex.addEventListener('click', () => {
   modalCodex.classList.add('hidden');
-  sfx.play('click');
+  sfx.playSfx('click');
 });
 
 // Copy Code Button
 btnCopyCode.addEventListener('click', () => {
   if (!myRoomCode) return;
-  navigator.clipboard.writeText(myRoomCode).then(() => {
-    showToast(`COPIED ROOM CODE: ${myRoomCode}`);
-    sfx.play('click');
-  }).catch(() => {
-    showToast(`ROOM CODE: ${myRoomCode}`);
-  });
+  navigator.clipboard
+    .writeText(myRoomCode)
+    .then(() => {
+      showToast(`COPIED ROOM CODE: ${myRoomCode}`);
+      sfx.playSfx('click');
+    })
+    .catch(() => {
+      showToast(`ROOM CODE: ${myRoomCode}`);
+    });
 });
 
 // ============================================================================
-// 4. LOBBY & ROOM ACTIONS
+// 5. MATCHMAKING, SOLO AI & LOBBY INTERACTIONS
 // ============================================================================
+// 1. Quick Matchmaking Queue
+btnQuickMatch.addEventListener('click', () => {
+  sfx.init();
+  sfx.playSfx('click');
+  const name = inputPlayerName.value.trim() || 'PILOT_ACE';
+
+  if (!isQueueingMatch) {
+    isQueueingMatch = true;
+    quickMatchText.innerText = '🔍 SEARCHING OPPONENT... (CLICK TO CANCEL)';
+    btnQuickMatch.classList.add('active-ready');
+    socket.emit('matchmaking:queue', { playerName: name, color: selectedColor });
+  } else {
+    isQueueingMatch = false;
+    quickMatchText.innerText = '⚡ QUICK MATCH // FIND OPPONENT';
+    btnQuickMatch.classList.remove('active-ready');
+    socket.emit('matchmaking:cancel');
+    showToast('MATCHMAKING CANCELLED');
+  }
+});
+
+socket.on('matchmaking:waiting', () => {
+  showToast('SCANNING CYBER GRID FOR OPPONENTS...');
+});
+
+// 2. Solo vs AI
+btnSoloAi.addEventListener('click', () => {
+  sfx.init();
+  sfx.playSfx('click');
+  const name = inputPlayerName.value.trim() || 'HUMAN_PILOT';
+  socket.emit('room:create_solo', { playerName: name, color: selectedColor });
+});
+
+// 3. Create Custom Room
 btnCreateRoom.addEventListener('click', () => {
   sfx.init();
-  sfx.play('click');
+  sfx.playSfx('click');
   const name = inputPlayerName.value.trim() || 'HOST_ONE';
   socket.emit('room:create', { playerName: name, color: selectedColor });
 });
 
+// 4. Join Custom Room
 btnJoinRoom.addEventListener('click', () => {
   sfx.init();
-  sfx.play('click');
+  sfx.playSfx('click');
   const code = inputJoinCode.value.trim().toUpperCase();
   if (!code) {
     showToast('PLEASE ENTER A VALID ROOM CODE');
     return;
   }
   const name = inputPlayerName.value.trim() || 'GUEST_TWO';
-  socket.emit('room:join', { roomCode: code, playerName: name, color: selectedColor });
+  const token = sessionStorage.getItem(`token_${code}`);
+  socket.emit('room:join', { roomCode: code, playerName: name, color: selectedColor, reconnectToken: token });
 });
 
+// 5. Ready Toggle
 btnReadyToggle.addEventListener('click', () => {
-  sfx.play('click');
+  sfx.playSfx('click');
   isReady = !isReady;
   btnReadyToggle.classList.toggle('active-ready', isReady);
   btnReadyToggle.querySelector('.btn-text').innerText = isReady ? 'WAITING FOR CLASH' : 'READY FOR CLASH';
   socket.emit('player:ready', { ready: isReady });
 });
 
-btnLeaveLobby.addEventListener('click', () => {
-  sfx.play('click');
-  socket.emit('room:leave');
-  resetClientState();
-  switchScreen('screen-menu');
-});
+// 6. Leave Room / Match
+btnLeaveLobby.addEventListener('click', leaveRoomAndReset);
+btnLeaveMatch.addEventListener('click', leaveRoomAndReset);
 
-btnLeaveMatch.addEventListener('click', () => {
-  sfx.play('click');
+function leaveRoomAndReset() {
+  sfx.playSfx('click');
   socket.emit('room:leave');
   resetClientState();
   switchScreen('screen-menu');
-});
+}
 
 btnRematch.addEventListener('click', () => {
-  sfx.play('click');
+  sfx.playSfx('click');
   socket.emit('rematch:request');
   btnRematch.disabled = true;
   rematchBtnText.innerText = 'REMATCH REQUESTED...';
@@ -463,49 +651,44 @@ function resetClientState() {
   myRole = null;
   myRoomCode = null;
   isReady = false;
+  isQueueingMatch = false;
   latestSnapshot = null;
+  quickMatchText.innerText = '⚡ QUICK MATCH // FIND OPPONENT';
+  btnQuickMatch.classList.remove('active-ready');
   btnReadyToggle.disabled = true;
   btnReadyToggle.classList.remove('active-ready');
   btnReadyToggle.querySelector('.btn-text').innerText = 'READY FOR CLASH';
   btnRematch.disabled = false;
   rematchBtnText.innerText = 'REMATCH (0/2)';
+  spectatorHudBadge.classList.add('hidden');
   disconnectOverlay.classList.add('hidden');
   countdownOverlay.classList.add('hidden');
+  comboBanner.classList.add('hidden');
 }
 
 // ============================================================================
-// 5. INPUT DISPATCHER (DESKTOP & MOBILE)
+// 6. INPUT HANDLING (PADDLE & ABILITIES)
 // ============================================================================
 function sendPaddleInput(clientY) {
-  if (currentScreen !== 'screen-hud') return;
+  if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
   const rect = canvas.getBoundingClientRect();
   const relY = clientY - rect.top;
   const yRatio = Math.max(0, Math.min(1, relY / rect.height));
   socket.emit('player:input', { yRatio });
 }
 
-// Desktop Mouse
-window.addEventListener('mousemove', (e) => {
-  sendPaddleInput(e.clientY);
-});
-
-// Mobile Touch Drag
+window.addEventListener('mousemove', (e) => sendPaddleInput(e.clientY));
 window.addEventListener('touchmove', (e) => {
-  if (e.touches.length > 0) {
-    sendPaddleInput(e.touches[0].clientY);
-  }
+  if (e.touches.length > 0) sendPaddleInput(e.touches[0].clientY);
 }, { passive: true });
-
 window.addEventListener('touchstart', (e) => {
-  if (e.touches.length > 0) {
-    sendPaddleInput(e.touches[0].clientY);
-  }
+  if (e.touches.length > 0) sendPaddleInput(e.touches[0].clientY);
 }, { passive: true });
 
-// Keyboard Paddle Nudge (W/S or Up/Down)
+// Keyboard Nudge & Ability Shortcuts
 let currentYRatio = 0.5;
 window.addEventListener('keydown', (e) => {
-  if (currentScreen !== 'screen-hud') return;
+  if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
   const step = 0.08;
   if (e.code === 'KeyW' || e.code === 'ArrowUp') {
     currentYRatio = Math.max(0, currentYRatio - step);
@@ -515,7 +698,6 @@ window.addEventListener('keydown', (e) => {
     socket.emit('player:input', { yRatio: currentYRatio });
   }
 
-  // Ability Hotkeys
   if (e.code === 'Space' || e.code === 'Digit1') triggerAbility('smash');
   else if (e.code === 'KeyQ' || e.code === 'Digit2') triggerAbility('drone');
   else if (e.code === 'KeyW' || e.code === 'Digit3') triggerAbility('vortex');
@@ -523,22 +705,21 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyR' || e.code === 'Digit5') triggerAbility('shield');
 });
 
-// Ability Touch Buttons
-abilityButtons.forEach(btn => {
+abilityButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     triggerAbility(btn.dataset.ability);
   });
 });
 
 function triggerAbility(abilityName) {
-  if (currentScreen !== 'screen-hud') return;
+  if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
   socket.emit('player:ability', { ability: abilityName });
 }
 
 // ============================================================================
-// 6. SOCKET.IO EVENT LISTENERS
+// 7. SOCKET.IO MULTIPLAYER EVENT HANDLERS
 // ============================================================================
-// Ping / Pong Latency Tracker
+// Latency Tracker
 setInterval(() => {
   if (socket.connected) {
     socket.emit('client:ping', Date.now());
@@ -550,19 +731,31 @@ socket.on('server:pong', (startTs) => {
   pingIndicator.innerText = `PING: ${latency} ms`;
 });
 
-// Room Joined (Host or Guest)
-socket.on('room:joined', ({ roomCode, role, lobby }) => {
+// Room Joined
+socket.on('room:joined', ({ roomCode, role, sessionToken, lobby }) => {
   myRoomCode = roomCode;
   myRole = role;
+  isQueueingMatch = false;
+  quickMatchText.innerText = '⚡ QUICK MATCH // FIND OPPONENT';
+  btnQuickMatch.classList.remove('active-ready');
+
+  if (sessionToken) {
+    sessionStorage.setItem(`token_${roomCode}`, sessionToken);
+  }
+
   lobbyRoomCode.innerText = roomCode;
   updateLobbyUI(lobby);
   switchScreen('screen-lobby');
-  showToast(`JOINED ROOM: ${roomCode} AS ${role.toUpperCase()}`);
+
+  if (role === 'spectator') {
+    spectatorHudBadge.classList.remove('hidden');
+    showToast(`WATCHING ROOM: ${roomCode} AS LIVE SPECTATOR`);
+  } else {
+    showToast(`JOINED ROOM: ${roomCode} AS ${role.toUpperCase()}`);
+  }
 });
 
-socket.on('room:error', ({ message }) => {
-  showToast(message);
-});
+socket.on('room:error', ({ message }) => showToast(message));
 
 socket.on('room:closed', ({ reason }) => {
   showToast(reason);
@@ -570,14 +763,13 @@ socket.on('room:closed', ({ reason }) => {
   switchScreen('screen-menu');
 });
 
-socket.on('lobby:updated', (lobby) => {
-  updateLobbyUI(lobby);
-});
+socket.on('lobby:updated', (lobby) => updateLobbyUI(lobby));
 
 function updateLobbyUI(lobby) {
   if (!lobby) return;
 
-  // Host info
+  spectatorsBadge.innerText = `👁️ ${lobby.spectatorsCount || 0} SPECTATORS WATCHING`;
+
   if (lobby.host) {
     hostNameEl.innerText = lobby.host.name;
     hostPreviewPaddle.style.background = lobby.host.color;
@@ -586,7 +778,6 @@ function updateLobbyUI(lobby) {
     hostReadyTag.classList.toggle('is-ready', lobby.host.ready);
   }
 
-  // Guest info
   if (lobby.guest) {
     guestNameEl.innerText = lobby.guest.name;
     guestPreviewPaddle.style.background = lobby.guest.color;
@@ -607,59 +798,61 @@ socket.on('countdown:start', ({ countdown }) => {
   switchScreen('screen-hud');
   countdownOverlay.classList.remove('hidden');
   countdownNumber.innerText = countdown;
-  sfx.play('countdown_tick');
+  sfx.playSfx('countdown_tick');
 });
 
 socket.on('countdown:tick', ({ countdown }) => {
   countdownNumber.innerText = countdown;
   if (countdown > 0) {
-    sfx.play('countdown_tick');
+    sfx.playSfx('countdown_tick');
   } else {
     countdownNumber.innerText = 'ENGAGE!';
-    sfx.play('countdown_start');
-    setTimeout(() => {
-      countdownOverlay.classList.add('hidden');
-    }, 600);
+    sfx.playSfx('countdown_start');
+    setTimeout(() => countdownOverlay.classList.add('hidden'), 600);
   }
 });
 
-// Game Started
 socket.on('game:started', () => {
   countdownOverlay.classList.add('hidden');
   disconnectOverlay.classList.add('hidden');
   if (currentScreen !== 'screen-hud') switchScreen('screen-hud');
 });
 
-// Authoritative GameState Snapshot (60 ticks/s)
+// Authoritative Physics Snapshot
 socket.on('gameState', (snapshot) => {
   latestSnapshot = snapshot;
 
-  // Process server events (sound, text, sparks)
+  // Process Events
   if (snapshot.events && snapshot.events.length > 0) {
-    snapshot.events.forEach(ev => {
-      handleServerEvent(ev);
-    });
+    snapshot.events.forEach((ev) => handleServerEvent(ev));
   }
 
-  // Update HUD
+  // Rally Combos
+  if (snapshot.rallyCount !== prevRally) {
+    prevRally = snapshot.rallyCount;
+    rallyIndicator.innerText = `RALLY: ${prevRally}`;
+    if (prevRally === 4) triggerComboCallout('⚡ NICE RALLY!');
+    else if (prevRally === 8) triggerComboCallout('🔥 HYPER CLASH!');
+    else if (prevRally === 12) triggerComboCallout('💥 CYBER OVERDRIVE!');
+  }
+
+  // Update HUD Scores
   hudHostScore.innerText = snapshot.paddles.host.score;
   hudGuestScore.innerText = snapshot.paddles.guest.score;
 
-  // Energy & Ability Ready States for local player
-  const myPaddle = snapshot.paddles[myRole];
-  if (myPaddle) {
+  // Energy & Skills for local player
+  if (myRole && snapshot.paddles[myRole]) {
+    const myPaddle = snapshot.paddles[myRole];
     const pct = Math.min(100, (myPaddle.energy / 100) * 100);
     energyProgressFill.style.width = `${pct}%`;
     energyNumeric.innerText = `${Math.floor(myPaddle.energy)} / 100`;
 
-    // Ability readiness
     document.getElementById('skill-smash').classList.toggle('ready', myPaddle.energy >= 30);
     document.getElementById('skill-drone').classList.toggle('ready', myPaddle.energy >= 40);
     document.getElementById('skill-vortex').classList.toggle('ready', myPaddle.energy >= 35);
     document.getElementById('skill-malware').classList.toggle('ready', myPaddle.energy >= 45);
     document.getElementById('skill-shield').classList.toggle('ready', myPaddle.energy >= 35);
 
-    // Active glows
     document.getElementById('skill-smash').classList.toggle('active-active', myPaddle.smashArmed);
     document.getElementById('skill-drone').classList.toggle('active-active', myPaddle.droneActive);
     document.getElementById('skill-shield').classList.toggle('active-active', myPaddle.shieldActive);
@@ -671,13 +864,13 @@ socket.on('gameState', (snapshot) => {
 function handleServerEvent(ev) {
   switch (ev.type) {
     case 'hit':
-      sfx.play('hit');
+      sfx.playSfx('hit');
       screenShake = 6;
       spawnBurst(ev.x, ev.y, ev.role === 'host' ? '#00ffff' : '#ff0077', 12);
       break;
 
     case 'smash':
-      sfx.play('smash');
+      sfx.playSfx('smash');
       screenShake = 22;
       spawnBurst(ev.x, ev.y, '#ffaa00', 30, 9);
       shockwaves.push(new Shockwave(ev.x, ev.y, 160, '#ffaa00'));
@@ -685,7 +878,7 @@ function handleServerEvent(ev) {
       break;
 
     case 'parry':
-      sfx.play('parry');
+      sfx.playSfx('parry');
       screenShake = 24;
       spawnBurst(ev.x, ev.y, '#00ffcc', 35, 10);
       shockwaves.push(new Shockwave(ev.x, ev.y, 190, '#00ffcc'));
@@ -693,7 +886,7 @@ function handleServerEvent(ev) {
       break;
 
     case 'drone_zap':
-      sfx.play('drone');
+      sfx.playSfx('drone');
       screenShake = 12;
       spawnBurst(ev.x, ev.y, '#00ffcc', 18);
       shockwaves.push(new Shockwave(ev.x, ev.y, 90, '#00ffcc'));
@@ -701,46 +894,52 @@ function handleServerEvent(ev) {
       break;
 
     case 'shield_block':
-      sfx.play('shield');
+      sfx.playSfx('shield');
       screenShake = 10;
       shockwaves.push(new Shockwave(ev.x, ev.y, 120, '#00bfff'));
       floatTexts.push(new FloatText('🛡️ SHIELD DEFLECTED!', ev.x, ev.y, '#00bfff'));
       break;
 
     case 'wall_hit':
-      sfx.play('hit');
+      sfx.playSfx('hit');
       spawnBurst(ev.x, ev.y, '#00ffff', 8, 4);
       break;
 
+    case 'powerup_collect':
+      sfx.playSfx('powerup');
+      screenShake = 14;
+      const puColor = ev.powerUpType === 'overclock' ? '#00ffcc' : ev.powerUpType === 'triball' ? '#ff00bb' : '#ffaa00';
+      floatTexts.push(new FloatText(`📦 ${ev.powerUpType.toUpperCase()} COLLECTED!`, ARENA_WIDTH / 2, ARENA_HEIGHT * 0.3, puColor));
+      break;
+
     case 'goal':
-      sfx.play('goal');
-      screenShake = 25;
+      sfx.playSfx('goal');
+      screenShake = 26;
       const isHostGoal = ev.scorer === 'host';
       const goalColor = isHostGoal ? '#00ffff' : '#ff0077';
-      spawnBurst(ev.x, ev.y, goalColor, 40, 10);
+      spawnBurst(ev.x, ev.y, goalColor, 42, 10);
       shockwaves.push(new Shockwave(ev.x, ev.y, 250, goalColor));
       floatTexts.push(new FloatText(`GOOOAL! ${ev.scorer.toUpperCase()}`, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, goalColor));
       break;
   }
 }
 
-// Ability Activated Broadcast
 socket.on('ability:activated', (data) => {
   if (data.ability === 'malware') {
-    sfx.play('malware');
+    sfx.playSfx('malware');
     screenShake = 16;
     if (data.targetRole === myRole) {
       floatTexts.push(new FloatText('👾 SYSTEM CORRUPTED // CONTROLS INVERTED!', ARENA_WIDTH / 2, ARENA_HEIGHT * 0.35, '#ff0055'));
-      showToast('⚠️ WARNING: MALWARE EMP HACK ACTIVE! INVERTED PADDLE!');
+      showToast('⚠️ WARNING: MALWARE EMP HACK ACTIVE! CONTROLS INVERTED!');
     }
   } else if (data.ability === 'vortex') {
-    sfx.play('vortex');
+    sfx.playSfx('vortex');
     floatTexts.push(new FloatText('🌀 VORTEX SINGULARITY OPENED!', ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 80, '#bb44ff'));
   }
 });
 
-// Disconnection Handling
-socket.on('opponent:disconnected', ({ role, reconnectTime }) => {
+// Disconnection
+socket.on('opponent:disconnected', ({ reconnectTime }) => {
   disconnectOverlay.classList.remove('hidden');
   disconnectTimerDisplay.innerText = `${reconnectTime}s`;
 });
@@ -754,7 +953,7 @@ socket.on('opponent:reconnected', () => {
   showToast('OPPONENT RECONNECTED // RESUMING BATTLE');
 });
 
-// Match Ended
+// Match End
 socket.on('match:ended', ({ winner, isWalkout, maxRally, score, stats }) => {
   switchScreen('screen-match-end');
   const isMeWinner = winner === myRole;
@@ -762,7 +961,7 @@ socket.on('match:ended', ({ winner, isWalkout, maxRally, score, stats }) => {
   if (isMeWinner) {
     endMatchStatus.innerText = isWalkout ? 'WALKOUT VICTORY' : 'VICTORY';
     endMatchStatus.className = 'end-headline victory';
-    endMatchSub.innerText = isWalkout ? 'OPPONENT SURRENDERED' : 'CHAMPION OF CYBER CLASH';
+    endMatchSub.innerText = isWalkout ? 'OPPONENT FORFEITED' : 'CYBER ARENA CHAMPION';
   } else {
     endMatchStatus.innerText = 'DEFEAT';
     endMatchStatus.className = 'end-headline defeat';
@@ -791,14 +990,13 @@ socket.on('rematch:vote', () => {
 });
 
 // ============================================================================
-// 7. CANVAS 2D RENDER LOOP (WITH RETRO SYNTHWAVE GRID & JUICE)
+// 8. CANVAS RENDER LOOP (SYNTHWAVE SUN, MULTI-BALLS, CRATES, TRAILS)
 // ============================================================================
 let gridOffset = 0;
 
 function renderLoop() {
   requestAnimationFrame(renderLoop);
 
-  // Resize canvas if dimensions changed
   if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -807,13 +1005,13 @@ function renderLoop() {
   const scaleX = canvas.width / ARENA_WIDTH;
   const scaleY = canvas.height / ARENA_HEIGHT;
 
-  // 1. Partial Alpha Trail for Motion Blur Juiciness
+  // 1. Motion Blur Alpha
   ctx.fillStyle = 'rgba(3, 3, 14, 0.35)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
 
-  // Screen shake application
+  // Screen shake
   if (screenShake > 0) {
     const rx = (Math.random() - 0.5) * screenShake;
     const ry = (Math.random() - 0.5) * screenShake;
@@ -822,7 +1020,8 @@ function renderLoop() {
     if (screenShake < 0.4) screenShake = 0;
   }
 
-  // 2. Retro Synthwave Perspective Floor Grid
+  // 2. Synthwave Neon Horizon Sun & Perspective Grid
+  drawSynthwaveSun(scaleX, scaleY);
   drawSynthwaveGrid(scaleX, scaleY);
 
   // 3. Center Court Net
@@ -835,12 +1034,18 @@ function renderLoop() {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Interpolation logic if snapshot exists
+  // Interpolation
   if (latestSnapshot) {
-    const b = latestSnapshot.ball;
-    renderState.ball.x += (b.x - renderState.ball.x) * 0.45;
-    renderState.ball.y += (b.y - renderState.ball.y) * 0.45;
-    renderState.ball.isSmash = b.isSmash;
+    // Multi-balls
+    renderState.balls = latestSnapshot.balls.map((sb, idx) => {
+      const prev = renderState.balls[idx] || { x: sb.x, y: sb.y };
+      return {
+        x: prev.x + (sb.x - prev.x) * 0.45,
+        y: prev.y + (sb.y - prev.y) * 0.45,
+        radius: 10,
+        isSmash: sb.isSmash
+      };
+    });
 
     const ph = latestSnapshot.paddles.host;
     const pg = latestSnapshot.paddles.guest;
@@ -861,26 +1066,30 @@ function renderLoop() {
     renderState.vortex.x = latestSnapshot.vortex.x;
     renderState.vortex.y = latestSnapshot.vortex.y;
     renderState.vortex.angle = latestSnapshot.vortex.angle;
+    renderState.powerUp = latestSnapshot.powerUp;
   }
 
-  // 4. Render Active Shield Walls
+  // 4. Render Shields
   if (latestSnapshot) {
-    // Host Shield (left)
     if (latestSnapshot.paddles.host.shieldActive) {
       drawAegisShield(18 * scaleX, 0, canvas.height, '#00bfff', scaleX);
     }
-    // Guest Shield (right)
     if (latestSnapshot.paddles.guest.shieldActive) {
       drawAegisShield((ARENA_WIDTH - 18) * scaleX, 0, canvas.height, '#ff00aa', scaleX);
     }
   }
 
-  // 5. Render Singularity Vortex
+  // 5. Render Vortex
   if (renderState.vortex.active) {
     drawSingularityVortex(renderState.vortex.x * scaleX, renderState.vortex.y * scaleY, renderState.vortex.angle, scaleX);
   }
 
-  // 6. Render Drones
+  // 6. Render Mystery Cyber Crate
+  if (renderState.powerUp) {
+    drawPowerUpCrate(renderState.powerUp.x * scaleX, renderState.powerUp.y * scaleY, renderState.powerUp.type, scaleX);
+  }
+
+  // 7. Render Drones
   if (renderState.drones.host.active) {
     drawDrone(renderState.drones.host.x * scaleX, renderState.drones.host.y * scaleY, '#00ffff', scaleX);
   }
@@ -888,7 +1097,7 @@ function renderLoop() {
     drawDrone(renderState.drones.guest.x * scaleX, renderState.drones.guest.y * scaleY, '#ff0077', scaleX);
   }
 
-  // 7. Render Paddles
+  // 8. Render Paddles
   drawPaddle(
     renderState.paddles.host.x * scaleX,
     renderState.paddles.host.y * scaleY,
@@ -896,7 +1105,8 @@ function renderLoop() {
     renderState.paddles.host.height * scaleY,
     '#00ffff',
     latestSnapshot ? latestSnapshot.paddles.host.smashArmed : false,
-    latestSnapshot ? latestSnapshot.paddles.host.malwareActive : false
+    latestSnapshot ? latestSnapshot.paddles.host.malwareActive : false,
+    latestSnapshot ? latestSnapshot.paddles.host.overclockActive : false
   );
 
   drawPaddle(
@@ -906,13 +1116,16 @@ function renderLoop() {
     renderState.paddles.guest.height * scaleY,
     '#ff0077',
     latestSnapshot ? latestSnapshot.paddles.guest.smashArmed : false,
-    latestSnapshot ? latestSnapshot.paddles.guest.malwareActive : false
+    latestSnapshot ? latestSnapshot.paddles.guest.malwareActive : false,
+    latestSnapshot ? latestSnapshot.paddles.guest.overclockActive : false
   );
 
-  // 8. Render Ball & Comet Trail
-  drawBall(scaleX, scaleY);
+  // 9. Render Balls
+  renderState.balls.forEach((ball, idx) => {
+    drawBall(ball, idx, scaleX, scaleY);
+  });
 
-  // 9. Render VFX: Shockwaves, Particles, Float Texts
+  // 10. Render VFX
   for (let i = shockwaves.length - 1; i >= 0; i--) {
     shockwaves[i].update();
     shockwaves[i].draw(ctx, scaleX, scaleY);
@@ -934,14 +1147,42 @@ function renderLoop() {
   ctx.restore();
 }
 
-// Draw Synthwave Grid Floor
+// Synthwave Sun on the Horizon
+function drawSynthwaveSun(scaleX, scaleY) {
+  const sunX = canvas.width / 2;
+  const sunY = canvas.height * 0.45;
+  const sunRadius = 75 * scaleX;
+
+  ctx.save();
+  const sunGrad = ctx.createLinearGradient(sunX, sunY - sunRadius, sunX, sunY + sunRadius);
+  sunGrad.addColorStop(0, '#ffff00');
+  sunGrad.addColorStop(0.5, '#ff0077');
+  sunGrad.addColorStop(1, '#660066');
+
+  ctx.fillStyle = sunGrad;
+  ctx.shadowBlur = 35;
+  ctx.shadowColor = '#ff0077';
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horizon horizontal cut lines
+  ctx.fillStyle = '#03030c';
+  for (let i = 0; i < 6; i++) {
+    const barY = sunY + i * (12 * scaleY);
+    const barHeight = (i + 1) * (2 * scaleY);
+    ctx.fillRect(sunX - sunRadius, barY, sunRadius * 2, barHeight);
+  }
+  ctx.restore();
+}
+
+// Synthwave Perspective Floor Grid
 function drawSynthwaveGrid(scaleX, scaleY) {
   gridOffset = (gridOffset + 1.2) % 40;
   ctx.save();
   ctx.strokeStyle = 'rgba(255, 0, 119, 0.08)';
   ctx.lineWidth = 1;
 
-  // Horizontal Grid Lines
   for (let y = 0; y < canvas.height; y += 40) {
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -949,7 +1190,6 @@ function drawSynthwaveGrid(scaleX, scaleY) {
     ctx.stroke();
   }
 
-  // Vertical Moving Grid Lines
   for (let x = gridOffset; x < canvas.width; x += 40) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -959,8 +1199,8 @@ function drawSynthwaveGrid(scaleX, scaleY) {
   ctx.restore();
 }
 
-// Draw Paddle with Neon Glow and Malware Distortion
-function drawPaddle(x, y, w, h, color, isSmashArmed, isMalware) {
+// Draw Paddle with Aura & Buffs
+function drawPaddle(x, y, w, h, color, isSmashArmed, isMalware, isOverclock) {
   ctx.save();
   if (isSmashArmed) {
     ctx.fillStyle = 'rgba(255, 170, 0, 0.35)';
@@ -969,16 +1209,20 @@ function drawPaddle(x, y, w, h, color, isSmashArmed, isMalware) {
     ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
   }
 
-  ctx.fillStyle = isSmashArmed ? '#ffaa00' : color;
-  ctx.shadowBlur = isSmashArmed ? 22 : 16;
-  ctx.shadowColor = isSmashArmed ? '#ffaa00' : color;
+  let finalColor = color;
+  if (isSmashArmed) finalColor = '#ffaa00';
+  if (isOverclock) finalColor = '#00ffcc';
+
+  ctx.fillStyle = finalColor;
+  ctx.shadowBlur = isSmashArmed || isOverclock ? 24 : 16;
+  ctx.shadowColor = finalColor;
   ctx.fillRect(x, y, w, h);
 
-  // Sweet-spot marker indicator on paddle
+  // Sweet spot marker
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x + 2, y + h * 0.38, w - 4, h * 0.24);
 
-  // Malware Glitch Overlay
+  // Malware Glitch
   if (isMalware) {
     ctx.strokeStyle = '#ff0000';
     ctx.lineWidth = 2;
@@ -989,40 +1233,70 @@ function drawPaddle(x, y, w, h, color, isSmashArmed, isMalware) {
 }
 
 // Draw Ball and High-Speed Comet Tail
-function drawBall(scaleX, scaleY) {
-  const ball = renderState.ball;
-  ballTrail.push({
-    x: ball.x,
-    y: ball.y,
-    isSmash: ball.isSmash
-  });
-  if (ballTrail.length > 9) ballTrail.shift();
+function drawBall(ball, idx, scaleX, scaleY) {
+  if (!ballTrails.has(idx)) ballTrails.set(idx, []);
+  const trail = ballTrails.get(idx);
+  trail.push({ x: ball.x, y: ball.y, isSmash: ball.isSmash });
+  if (trail.length > 9) trail.shift();
 
-  // Draw Trail
-  for (let i = 0; i < ballTrail.length; i++) {
-    const pt = ballTrail[i];
-    const alpha = (i + 1) / (ballTrail.length * 2.2);
+  for (let i = 0; i < trail.length; i++) {
+    const pt = trail[i];
+    const alpha = (i + 1) / (trail.length * 2.2);
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = pt.isSmash ? '#ffaa00' : '#00ffff';
+    ctx.fillStyle = pt.isSmash ? '#ffaa00' : idx > 0 ? '#ff00bb' : '#00ffff';
     ctx.beginPath();
-    ctx.arc(pt.x * scaleX, pt.y * scaleY, ball.radius * scaleX * (0.4 + 0.6 * (i / ballTrail.length)), 0, Math.PI * 2);
+    ctx.arc(pt.x * scaleX, pt.y * scaleY, ball.radius * scaleX * (0.4 + 0.6 * (i / trail.length)), 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  // Draw Core Ball
   ctx.save();
-  ctx.fillStyle = ball.isSmash ? '#ffaa00' : '#ffffff';
+  ctx.fillStyle = ball.isSmash ? '#ffaa00' : idx > 0 ? '#ff00bb' : '#ffffff';
   ctx.shadowBlur = ball.isSmash ? 28 : 16;
-  ctx.shadowColor = ball.isSmash ? '#ffaa00' : '#00ffff';
+  ctx.shadowColor = ball.isSmash ? '#ffaa00' : idx > 0 ? '#ff00bb' : '#00ffff';
   ctx.beginPath();
   ctx.arc(ball.x * scaleX, ball.y * scaleY, ball.radius * scaleX, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
-// Draw Defense Drone
+// Draw Power-Up Mystery Crate
+let cratePulse = 0;
+function drawPowerUpCrate(x, y, type, scaleX) {
+  cratePulse += 0.08;
+  const radius = 16 * scaleX;
+  let color = '#ffaa00';
+  let icon = '⚡';
+  if (type === 'triball') {
+    color = '#ff00bb';
+    icon = '💥';
+  } else if (type === 'overclock') {
+    color = '#00ffcc';
+    icon = '⏩';
+  }
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = color;
+
+  // Rotating diamond
+  ctx.rotate(cratePulse);
+  ctx.strokeRect(-radius * 0.7, -radius * 0.7, radius * 1.4, radius * 1.4);
+
+  // Icon center
+  ctx.rotate(-cratePulse);
+  ctx.font = `${14 * scaleX}px "Orbitron", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(icon, 0, 0);
+  ctx.restore();
+}
+
+// Draw Drone
 let dronePulse = 0;
 function drawDrone(x, y, color, scaleX) {
   dronePulse += 0.08;
@@ -1034,28 +1308,24 @@ function drawDrone(x, y, color, scaleX) {
   ctx.shadowBlur = 18;
   ctx.shadowColor = color;
 
-  // Drone Core
   ctx.beginPath();
   ctx.arc(0, 0, size * 0.7, 0, Math.PI * 2);
   ctx.fill();
 
-  // Rotating Wing Rings
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(0, 0, size, dronePulse, dronePulse + Math.PI);
   ctx.stroke();
 
-  // Sensor Eye
   ctx.fillStyle = '#ff0055';
   ctx.beginPath();
   ctx.arc(2, 0, 3, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.restore();
 }
 
-// Draw Singularity Vortex Wormhole
+// Draw Vortex
 function drawSingularityVortex(x, y, angle, scaleX) {
   ctx.save();
   ctx.translate(x, y);
@@ -1071,16 +1341,14 @@ function drawSingularityVortex(x, y, angle, scaleX) {
     ctx.stroke();
   }
 
-  // Core
   ctx.fillStyle = '#110022';
   ctx.beginPath();
   ctx.arc(0, 0, 16 * scaleX, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.restore();
 }
 
-// Draw Aegis Shield Forcefield Wall
+// Draw Aegis Shield
 function drawAegisShield(x, y1, y2, color, scaleX) {
   ctx.save();
   ctx.strokeStyle = color;
@@ -1092,7 +1360,6 @@ function drawAegisShield(x, y1, y2, color, scaleX) {
   ctx.lineTo(x, y2);
   ctx.stroke();
 
-  // Hex energy dashes
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
   ctx.lineWidth = 2;
   for (let y = 0; y < y2; y += 35) {
@@ -1101,5 +1368,4 @@ function drawAegisShield(x, y1, y2, color, scaleX) {
   ctx.restore();
 }
 
-// Start Render Loop
 requestAnimationFrame(renderLoop);

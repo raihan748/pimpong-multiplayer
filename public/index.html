@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>NEON PONG: CYBER CLASH — 1v1 Multiplayer Synthwave Arena</title>
+  <title>NEON PONG: CYBER CLASH — 1v1 Synthwave Cyberpunk Multiplayer Arena</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,8 +14,27 @@
   <!-- Background Animated Retro Grid Canvas -->
   <canvas id="gameCanvas"></canvas>
 
-  <!-- Notification / Floating Banner -->
+  <!-- CRT Scanline Effect Overlay (Togglable) -->
+  <div id="crt-overlay" class="crt-scanlines"></div>
+
+  <!-- Audio Equalizer Neon Visualizer Ribbon -->
+  <div id="eq-ribbon" class="eq-ribbon-container">
+    <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+    <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+    <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+    <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+  </div>
+
+  <!-- Notification / Floating Toast Container -->
   <div id="toast-container"></div>
+
+  <!-- Quick Settings Corner (Audio, CRT, Codex) -->
+  <div class="settings-toolbar">
+    <button id="btn-toggle-bgm" class="tool-btn" title="Toggle Procedural Synthwave BGM">🎵 BGM: OFF</button>
+    <button id="btn-toggle-sfx" class="tool-btn active" title="Toggle Procedural SFX">🔊 SFX: ON</button>
+    <button id="btn-toggle-crt" class="tool-btn active" title="Toggle CRT Retro Filter">📺 CRT: ON</button>
+    <button id="btn-open-codex-toolbar" class="tool-btn" title="Open Codex & Abilities">📖 CODEX</button>
+  </div>
 
   <!-- UI OVERLAY LAYER -->
   <div id="ui-overlay">
@@ -24,13 +43,14 @@
     <div id="screen-menu" class="screen-view active">
       <div class="cyber-panel menu-panel">
         <div class="glitch-title-wrap">
+          <div class="cyber-badge-top">v2.0 // CYBER CLASH HARDENED</div>
           <h1 class="game-title" data-text="NEON PONG">NEON PONG</h1>
-          <span class="sub-title">CYBER CLASH // 1v1 REAL-TIME MULTIPLAYER</span>
+          <span class="sub-title">SYNTHWAVE CYBERPUNK 1v1 REAL-TIME ARENA</span>
         </div>
 
         <div class="form-group">
-          <label for="player-name">PILOT CALLSIGN</label>
-          <input type="text" id="player-name" maxlength="12" placeholder="CYBER_GHOST" value="PILOT_ONE" autocomplete="off" spellcheck="false">
+          <label for="player-name">CYBER CALLSIGN (NICKNAME)</label>
+          <input type="text" id="player-name" maxlength="14" placeholder="CYBER_GHOST" value="PILOT_ACE" autocomplete="off" spellcheck="false">
         </div>
 
         <div class="form-group">
@@ -44,20 +64,31 @@
           </div>
         </div>
 
+        <!-- Mode Selection Action Stack -->
         <div class="action-buttons">
-          <button id="btn-create-room" class="cyber-btn primary-btn">
+          <!-- 1. Quick Matchmaking Queue -->
+          <button id="btn-quick-match" class="cyber-btn quick-match-btn">
             <span class="btn-glow"></span>
-            <span class="btn-text">⚡ CREATE ROOM</span>
+            <span id="quick-match-text" class="btn-text">⚡ QUICK MATCH // FIND OPPONENT</span>
+          </button>
+
+          <!-- 2. Solo vs AI Deity -->
+          <button id="btn-solo-ai" class="cyber-btn solo-btn">
+            <span class="btn-text">🤖 SOLO VS AI [CYBER DEITY BOT]</span>
           </button>
 
           <div class="or-separator">
             <span class="line"></span>
-            <span class="or-text">OR JOIN VIA CODE</span>
+            <span class="or-text">OR CUSTOM ROOM</span>
             <span class="line"></span>
           </div>
 
+          <button id="btn-create-room" class="cyber-btn primary-btn">
+            <span class="btn-text">🔒 CREATE PRIVATE ROOM</span>
+          </button>
+
           <div class="join-box">
-            <input type="text" id="join-room-code" placeholder="ENTER ROOM CODE (EX: NEON-7X)" maxlength="10" autocomplete="off" spellcheck="false">
+            <input type="text" id="join-room-code" placeholder="ENTER ROOM CODE (EX: NEON-7X)" maxlength="12" autocomplete="off" spellcheck="false">
             <button id="btn-join-room" class="cyber-btn secondary-btn">
               <span class="btn-text">JOIN</span>
             </button>
@@ -65,7 +96,7 @@
         </div>
 
         <div class="codex-trigger-wrap">
-          <button id="btn-open-codex" class="text-link">📖 SUPER ABILITIES & PARRY GUIDE</button>
+          <button id="btn-open-codex" class="text-link">📖 SUPER ABILITIES & PARRY CLASH GUIDE</button>
         </div>
       </div>
     </div>
@@ -80,6 +111,10 @@
             <span id="lobby-room-code" class="code-val">NEON-00</span>
             <button id="btn-copy-code" class="copy-btn" title="Copy Room Code">📋 COPY</button>
           </div>
+        </div>
+
+        <div class="spectator-counter-wrap">
+          <span id="spectators-badge" class="spectator-badge">👁️ 0 SPECTATORS WATCHING</span>
         </div>
 
         <div class="vs-container">
@@ -129,6 +164,7 @@
           <div class="network-stats">
             <span id="ping-indicator" class="ping-badge">PING: -- ms</span>
             <span id="rally-indicator" class="rally-badge">RALLY: 0</span>
+            <span id="spectator-hud-badge" class="ping-badge hidden">👁️ SPEC</span>
           </div>
         </div>
 
@@ -141,6 +177,11 @@
       <!-- Center Countdown Overlay -->
       <div id="countdown-overlay" class="center-banner hidden">
         <span id="countdown-number" class="countdown-digits">3</span>
+      </div>
+
+      <!-- Combo Announcer Banner -->
+      <div id="combo-banner" class="center-banner combo-banner hidden">
+        <span id="combo-text" class="combo-title">HYPER RALLY!</span>
       </div>
 
       <!-- Disconnect 15s Overlay -->
@@ -268,7 +309,7 @@
           </div>
           <div class="stats-row highlight-row">
             <span>LONGEST RALLY</span>
-            <span colspan="2" id="stat-max-rally" class="rally-stat">0</span>
+            <span id="stat-max-rally" class="rally-stat">0</span>
           </div>
         </div>
 
@@ -287,7 +328,7 @@
     <div id="modal-codex" class="modal-backdrop hidden">
       <div class="cyber-panel codex-panel">
         <div class="modal-header">
-          <h3>CYBER CODEX: ABILITIES & COUNTER-PLAY</h3>
+          <h3>CYBER CODEX: ABILITIES, POWER-UPS & COUNTER-PLAY</h3>
           <button id="btn-close-codex" class="close-x">✕</button>
         </div>
         <div class="codex-content">
@@ -329,6 +370,14 @@
             <div class="codex-desc">
               <h4>AEGIS ENERGY SHIELD (35 ⚡ | Durasi 6s | R / 5)</h4>
               <p>Memunculkan barrier energi pelindung di belakang gawang yang memantulkan 1 kali bola lolos.</p>
+            </div>
+          </div>
+
+          <div class="codex-item powerup-item">
+            <div class="codex-icon">📦</div>
+            <div class="codex-desc">
+              <h4>MYSTERY CYBER CRATES (POWER-UPS)</h4>
+              <p>Bola yang mengenai orb di tengah arena memberikan buff instan: ⚡ <strong>Overclock Speed</strong>, 💥 <strong>Tri-Ball Clones</strong>, atau 💎 <strong>+40 Energy Recharge</strong>.</p>
             </div>
           </div>
         </div>
