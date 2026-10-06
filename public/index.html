@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>NEON PONG: CYBER CLASH — 1v1 Multiplayer Synthwave Arena</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Background Animated Retro Grid Canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Notification / Floating Banner -->
+  <div id="toast-container"></div>
+
+  <!-- UI OVERLAY LAYER -->
+  <div id="ui-overlay">
+
+    <!-- 1. SCREEN: MAIN MENU -->
+    <div id="screen-menu" class="screen-view active">
+      <div class="cyber-panel menu-panel">
+        <div class="glitch-title-wrap">
+          <h1 class="game-title" data-text="NEON PONG">NEON PONG</h1>
+          <span class="sub-title">CYBER CLASH // 1v1 REAL-TIME MULTIPLAYER</span>
+        </div>
+
+        <div class="form-group">
+          <label for="player-name">PILOT CALLSIGN</label>
+          <input type="text" id="player-name" maxlength="12" placeholder="CYBER_GHOST" value="PILOT_ONE" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="form-group">
+          <label>PADDLE NEON AURA</label>
+          <div class="color-palette">
+            <button class="color-btn active" data-color="#00ffff" style="--c: #00ffff" title="Cyan Neon"></button>
+            <button class="color-btn" data-color="#ff0077" style="--c: #ff0077" title="Magenta Flash"></button>
+            <button class="color-btn" data-color="#39ff14" style="--c: #39ff14" title="Acid Lime"></button>
+            <button class="color-btn" data-color="#ffaa00" style="--c: #ffaa00" title="Solar Amber"></button>
+            <button class="color-btn" data-color="#bc13fe" style="--c: #bc13fe" title="Ultraviolet"></button>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button id="btn-create-room" class="cyber-btn primary-btn">
+            <span class="btn-glow"></span>
+            <span class="btn-text">⚡ CREATE ROOM</span>
+          </button>
+
+          <div class="or-separator">
+            <span class="line"></span>
+            <span class="or-text">OR JOIN VIA CODE</span>
+            <span class="line"></span>
+          </div>
+
+          <div class="join-box">
+            <input type="text" id="join-room-code" placeholder="ENTER ROOM CODE (EX: NEON-7X)" maxlength="10" autocomplete="off" spellcheck="false">
+            <button id="btn-join-room" class="cyber-btn secondary-btn">
+              <span class="btn-text">JOIN</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="codex-trigger-wrap">
+          <button id="btn-open-codex" class="text-link">📖 SUPER ABILITIES & PARRY GUIDE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. SCREEN: ROOM LOBBY -->
+    <div id="screen-lobby" class="screen-view">
+      <div class="cyber-panel lobby-panel">
+        <div class="lobby-header">
+          <span class="status-chip live-chip">ROOM LOBBY</span>
+          <div class="room-code-badge">
+            <span class="label">ROOM CODE:</span>
+            <span id="lobby-room-code" class="code-val">NEON-00</span>
+            <button id="btn-copy-code" class="copy-btn" title="Copy Room Code">📋 COPY</button>
+          </div>
+        </div>
+
+        <div class="vs-container">
+          <!-- Host Card -->
+          <div class="pilot-card host-card" id="card-host">
+            <div class="card-aura host-aura"></div>
+            <div class="role-badge">PLAYER 1 [HOST]</div>
+            <div class="pilot-name" id="host-name">WAITING...</div>
+            <div class="paddle-preview" id="host-preview-paddle"></div>
+            <div class="ready-tag" id="host-ready-tag">NOT READY</div>
+          </div>
+
+          <div class="vs-symbol">VS</div>
+
+          <!-- Guest Card -->
+          <div class="pilot-card guest-card" id="card-guest">
+            <div class="card-aura guest-aura"></div>
+            <div class="role-badge">PLAYER 2 [GUEST]</div>
+            <div class="pilot-name" id="guest-name">WAITING FOR OPPONENT...</div>
+            <div class="paddle-preview" id="guest-preview-paddle"></div>
+            <div class="ready-tag" id="guest-ready-tag">WAITING</div>
+          </div>
+        </div>
+
+        <div class="lobby-actions">
+          <button id="btn-ready-toggle" class="cyber-btn ready-btn" disabled>
+            <span class="btn-text">READY FOR CLASH</span>
+          </button>
+          <button id="btn-leave-lobby" class="cyber-btn exit-btn">
+            <span class="btn-text">LEAVE ROOM</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. SCREEN: IN-GAME HUD -->
+    <div id="screen-hud" class="screen-view">
+      <!-- HUD Top Bar -->
+      <div class="hud-top-bar">
+        <div class="player-hud-box host-hud">
+          <div class="hud-name" id="hud-host-name">HOST</div>
+          <div class="hud-score" id="hud-host-score">0</div>
+        </div>
+
+        <div class="match-info-center">
+          <div class="target-score">FIRST TO 7 GOALS</div>
+          <div class="network-stats">
+            <span id="ping-indicator" class="ping-badge">PING: -- ms</span>
+            <span id="rally-indicator" class="rally-badge">RALLY: 0</span>
+          </div>
+        </div>
+
+        <div class="player-hud-box guest-hud">
+          <div class="hud-name" id="hud-guest-name">GUEST</div>
+          <div class="hud-score" id="hud-guest-score">0</div>
+        </div>
+      </div>
+
+      <!-- Center Countdown Overlay -->
+      <div id="countdown-overlay" class="center-banner hidden">
+        <span id="countdown-number" class="countdown-digits">3</span>
+      </div>
+
+      <!-- Disconnect 15s Overlay -->
+      <div id="disconnect-overlay" class="center-banner disconnect-banner hidden">
+        <div class="disconnect-title">⚠️ OPPONENT DISCONNECTED</div>
+        <div class="disconnect-desc">WAITING FOR RECONNECT...</div>
+        <div id="disconnect-timer-display" class="disconnect-timer">15s</div>
+        <div class="disconnect-note">WALKOUT VICTORY AWARDED IF TIMER EXPIRES</div>
+      </div>
+
+      <!-- HUD Bottom: Energy Bar & Ability Action Deck -->
+      <div class="hud-bottom-bar">
+        <div class="energy-module">
+          <div class="energy-header">
+            <span>⚡ CORE GENERATOR</span>
+            <span id="energy-numeric">50 / 100</span>
+          </div>
+          <div class="energy-track">
+            <div id="energy-progress-fill" style="width: 50%;"></div>
+          </div>
+        </div>
+
+        <div class="ability-action-deck">
+          <!-- 1. Super Comet Smash -->
+          <button class="ability-btn smash" id="skill-smash" data-ability="smash">
+            <div class="skill-icon">🔥</div>
+            <div class="skill-meta">
+              <span class="skill-name">COMET SMASH</span>
+              <span class="skill-shortcut">[SPACE] / [1]</span>
+            </div>
+            <div class="skill-cost">30 ⚡</div>
+            <div class="skill-cooldown-overlay"></div>
+          </button>
+
+          <!-- 2. Defense Drone -->
+          <button class="ability-btn drone" id="skill-drone" data-ability="drone">
+            <div class="skill-icon">🤖</div>
+            <div class="skill-meta">
+              <span class="skill-name">DRONE GUARD</span>
+              <span class="skill-shortcut">[Q] / [2]</span>
+            </div>
+            <div class="skill-cost">40 ⚡</div>
+            <div class="skill-cooldown-overlay"></div>
+          </button>
+
+          <!-- 3. Singularity Vortex -->
+          <button class="ability-btn vortex" id="skill-vortex" data-ability="vortex">
+            <div class="skill-icon">🌀</div>
+            <div class="skill-meta">
+              <span class="skill-name">VORTEX HOLE</span>
+              <span class="skill-shortcut">[W] / [3]</span>
+            </div>
+            <div class="skill-cost">35 ⚡</div>
+            <div class="skill-cooldown-overlay"></div>
+          </button>
+
+          <!-- 4. Cyber Malware EMP -->
+          <button class="ability-btn malware" id="skill-malware" data-ability="malware">
+            <div class="skill-icon">👾</div>
+            <div class="skill-meta">
+              <span class="skill-name">MALWARE HACK</span>
+              <span class="skill-shortcut">[E] / [4]</span>
+            </div>
+            <div class="skill-cost">45 ⚡</div>
+            <div class="skill-cooldown-overlay"></div>
+          </button>
+
+          <!-- 5. Aegis Energy Shield -->
+          <button class="ability-btn shield" id="skill-shield" data-ability="shield">
+            <div class="skill-icon">🛡️</div>
+            <div class="skill-meta">
+              <span class="skill-name">AEGIS SHIELD</span>
+              <span class="skill-shortcut">[R] / [5]</span>
+            </div>
+            <div class="skill-cost">35 ⚡</div>
+            <div class="skill-cooldown-overlay"></div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. SCREEN: MATCH END -->
+    <div id="screen-match-end" class="screen-view">
+      <div class="cyber-panel end-panel">
+        <h2 id="end-match-status" class="end-headline">VICTORY</h2>
+        <div id="end-match-sub" class="end-sub">TARGET NEUTRALIZED</div>
+
+        <div class="end-score-board">
+          <div class="end-score-col host-col">
+            <span id="end-host-name">HOST</span>
+            <span id="end-host-score" class="end-score-num">7</span>
+          </div>
+          <div class="end-colon">:</div>
+          <div class="end-score-col guest-col">
+            <span id="end-guest-name">GUEST</span>
+            <span id="end-guest-score" class="end-score-num">3</span>
+          </div>
+        </div>
+
+        <div class="match-stats-table">
+          <div class="stats-row head-row">
+            <span>METRIC</span>
+            <span id="stat-p1-header">HOST</span>
+            <span id="stat-p2-header">GUEST</span>
+          </div>
+          <div class="stats-row">
+            <span>PADDLE HITS</span>
+            <span id="stat-p1-hits">0</span>
+            <span id="stat-p2-hits">0</span>
+          </div>
+          <div class="stats-row">
+            <span>SMASHES FIRED</span>
+            <span id="stat-p1-smashes">0</span>
+            <span id="stat-p2-smashes">0</span>
+          </div>
+          <div class="stats-row">
+            <span>SWEET-SPOT PARRIES</span>
+            <span id="stat-p1-parries">0</span>
+            <span id="stat-p2-parries">0</span>
+          </div>
+          <div class="stats-row">
+            <span>ENERGY CONSUMED</span>
+            <span id="stat-p1-energy">0</span>
+            <span id="stat-p2-energy">0</span>
+          </div>
+          <div class="stats-row highlight-row">
+            <span>LONGEST RALLY</span>
+            <span colspan="2" id="stat-max-rally" class="rally-stat">0</span>
+          </div>
+        </div>
+
+        <div class="end-actions">
+          <button id="btn-rematch" class="cyber-btn primary-btn">
+            <span id="rematch-btn-text" class="btn-text">REMATCH (0/2)</span>
+          </button>
+          <button id="btn-leave-match" class="cyber-btn exit-btn">
+            <span class="btn-text">EXIT TO MENU</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. MODAL: CODEX & ABILITY RULES -->
+    <div id="modal-codex" class="modal-backdrop hidden">
+      <div class="cyber-panel codex-panel">
+        <div class="modal-header">
+          <h3>CYBER CODEX: ABILITIES & COUNTER-PLAY</h3>
+          <button id="btn-close-codex" class="close-x">✕</button>
+        </div>
+        <div class="codex-content">
+          <div class="codex-item">
+            <div class="codex-icon">🔥</div>
+            <div class="codex-desc">
+              <h4>SUPER COMET SMASH (30 ⚡ | Space / 1)</h4>
+              <p>Pukulan berikutnya melesat dengan kecepatan <strong>1.8x lipat</strong> dan jejak api komet.</p>
+              <div class="counter-tip">🛡️ <strong>COUNTER-PLAY:</strong> Tangkis tepat di tengah paddle (sweet-spot) untuk memicu <strong>PARRY CLASH!</strong> Bola akan membalas dengan kecepatan tinggi!</div>
+            </div>
+          </div>
+
+          <div class="codex-item">
+            <div class="codex-icon">🤖</div>
+            <div class="codex-desc">
+              <h4>DEFENSE DRONE (40 ⚡ | Durasi 8s | Q / 2)</h4>
+              <p>Drone semi-otonom menjaga gawang dan memantulkan bola jika paddle kamu terlewat.</p>
+            </div>
+          </div>
+
+          <div class="codex-item">
+            <div class="codex-icon">🌀</div>
+            <div class="codex-desc">
+              <h4>SINGULARITY VORTEX (35 ⚡ | Durasi 6s | W / 3)</h4>
+              <p>Membuka wormhole gravitasi di tengah arena yang membelokkan kurva lintasan bola secara dinamis.</p>
+            </div>
+          </div>
+
+          <div class="codex-item">
+            <div class="codex-icon">👾</div>
+            <div class="codex-desc">
+              <h4>CYBER MALWARE EMP (45 ⚡ | Durasi 3.5s | E / 4)</h4>
+              <p>Mengacaukan kontrol lawan: arah gerakan terbalik (invert) & paddle lawan menciut 30%!</p>
+            </div>
+          </div>
+
+          <div class="codex-item">
+            <div class="codex-icon">🛡️</div>
+            <div class="codex-desc">
+              <h4>AEGIS ENERGY SHIELD (35 ⚡ | Durasi 6s | R / 5)</h4>
+              <p>Memunculkan barrier energi pelindung di belakang gawang yang memantulkan 1 kali bola lolos.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Socket.IO Client -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Main Game Client Script -->
+  <script src="game.js"></script>
+</body>
+</html>

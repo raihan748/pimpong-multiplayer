@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Pong - Ultimate Abilities & Assistants</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;700;800&display=swap');
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #03030c;
+            overflow: hidden;
+            font-family: 'Orbitron', sans-serif;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 16px 24px;
+            width: 100%;
+        }
+
+        .score-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .score-box.ai-box {
+            align-items: flex-end;
+        }
+
+        .score-tag {
+            font-size: 0.75rem;
+            letter-spacing: 2px;
+            font-weight: 800;
+        }
+
+        .player-tag { color: #00ffff; text-shadow: 0 0 10px rgba(0,255,255,0.7); }
+        .ai-tag { color: #ff0077; text-shadow: 0 0 10px rgba(255,0,119,0.7); }
+
+        .score-box.ai-box {
+            align-items: flex-end;
+            position: relative;
+        }
+
+        .boss-tag-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .boss-overdrive-bar {
+            width: 120px;
+            height: 6px;
+            background: rgba(30, 0, 20, 0.8);
+            border: 1px solid #ff0055;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        #boss-overdrive-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #ff0055, #ff00ff, #ffffff);
+            box-shadow: 0 0 10px #ff0055;
+            transition: width 0.15s ease;
+        }
+
+        .boss-dialogue {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.72rem;
+            color: #ff3377;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-shadow: 0 0 8px rgba(255, 0, 85, 0.8);
+            min-height: 16px;
+        }
+
+        .boss-rage-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            margin-top: 4px;
+        }
+
+        .boss-rage-header {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.68rem;
+            font-weight: 800;
+            color: #ff2255;
+            letter-spacing: 1px;
+            display: flex;
+            gap: 6px;
+        }
+
+        .boss-rage-bar {
+            width: 135px;
+            height: 7px;
+            background: rgba(40, 5, 20, 0.85);
+            border: 1px solid #ff0055;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 0 8px rgba(255, 0, 85, 0.3);
+        }
+
+        #boss-rage-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #ff8800, #ff0055, #ff0000, #ffffff);
+            box-shadow: 0 0 12px #ff0055;
+            transition: width 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .rage-glitch {
+            animation: rageShake 0.15s infinite alternate;
+        }
+
+        @keyframes rageShake {
+            0% { transform: translate(1px, -1px); }
+            100% { transform: translate(-1px, 1px); }
+        }
+
+        .score-val {
+            font-size: 3.5rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        #player-score {
+            color: #00ffff;
+            text-shadow: 0 0 25px rgba(0, 255, 255, 0.9), 0 0 50px rgba(0, 255, 255, 0.5);
+        }
+
+        #ai-score {
+            color: #ff0077;
+            text-shadow: 0 0 25px rgba(255, 0, 119, 0.9), 0 0 50px rgba(255, 0, 119, 0.5);
+        }
+
+        /* Live Assistant Status Tracker */
+        .active-assistants-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .assistant-badge {
+            background: rgba(10, 20, 35, 0.85);
+            border: 1px solid rgba(0, 255, 255, 0.4);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(6px);
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: all 0.25s ease;
+        }
+
+        .assistant-badge.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .badge-drone { border-color: #00ffcc; color: #00ffcc; box-shadow: 0 0 10px rgba(0,255,204,0.3); }
+        .badge-vortex { border-color: #bb44ff; color: #d680ff; box-shadow: 0 0 10px rgba(187,68,255,0.3); }
+        .badge-virus { border-color: #ff0055; color: #ff5588; box-shadow: 0 0 10px rgba(255,0,85,0.4); }
+        .badge-shield { border-color: #00bfff; color: #80dfff; box-shadow: 0 0 10px rgba(0,191,255,0.3); }
+
+        .bottom-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 16px;
+            width: 100%;
+            pointer-events: none;
+        }
+
+        .energy-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 360px;
+            max-width: 88%;
+        }
+
+        .energy-label {
+            font-size: 0.72rem;
+            letter-spacing: 2px;
+            color: #99eeff;
+            font-weight: 800;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .energy-track {
+            width: 100%;
+            height: 12px;
+            background: rgba(10, 20, 40, 0.8);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            box-shadow: 0 0 12px rgba(0, 255, 255, 0.2);
+            overflow: hidden;
+            position: relative;
+        }
+
+        #energy-fill {
+            height: 100%;
+            width: 75%;
+            background: linear-gradient(90deg, #00ffcc, #0088ff, #ff00bb);
+            box-shadow: 0 0 16px #00ffff;
+            transition: width 0.1s ease-out;
+        }
+
+        .ability-deck {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            pointer-events: auto;
+            max-width: 98vw;
+            padding: 0 10px;
+        }
+
+        .skill-btn {
+            background: rgba(12, 18, 36, 0.85);
+            border: 1.5px solid #283a54;
+            border-radius: 12px;
+            padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 82px;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .skill-btn:active {
+            transform: scale(0.93);
+        }
+
+        .skill-icon {
+            font-size: 1.25rem;
+            margin-bottom: 2px;
+        }
+
+        .skill-name {
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #8899aa;
+        }
+
+        .skill-cost {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #556677;
+            margin-top: 1px;
+        }
+
+        .skill-btn.ready {
+            cursor: pointer;
+        }
+
+        .skill-btn.ready.drone {
+            border-color: #00ffcc;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.45);
+        }
+        .skill-btn.ready.drone .skill-name { color: #00ffcc; }
+        .skill-btn.ready.drone .skill-cost { color: #b3fffa; }
+
+        .skill-btn.ready.vortex {
+            border-color: #bb44ff;
+            box-shadow: 0 0 15px rgba(187, 68, 255, 0.45);
+        }
+        .skill-btn.ready.vortex .skill-name { color: #cc66ff; }
+        .skill-btn.ready.vortex .skill-cost { color: #ecc6ff; }
+
+        .skill-btn.ready.virus {
+            border-color: #ff0055;
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.45);
+        }
+        .skill-btn.ready.virus .skill-name { color: #ff3377; }
+        .skill-btn.ready.virus .skill-cost { color: #ffb3cc; }
+
+        .skill-btn.ready.shield {
+            border-color: #00bfff;
+            box-shadow: 0 0 15px rgba(0, 191, 255, 0.45);
+        }
+        .skill-btn.ready.shield .skill-name { color: #33ccff; }
+        .skill-btn.ready.shield .skill-cost { color: #b3ecff; }
+
+        .skill-btn.ready.smash {
+            border-color: #ffbb00;
+            box-shadow: 0 0 15px rgba(255, 187, 0, 0.45);
+        }
+        .skill-btn.ready.smash .skill-name { color: #ffcc00; }
+        .skill-btn.ready.smash .skill-cost { color: #fff0b3; }
+
+        .skill-btn.active-glow {
+            animation: pulseGlow 0.5s infinite alternate;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(1); filter: brightness(1.05); }
+            100% { transform: scale(1.06); filter: brightness(1.4); }
+        }
+
+        /* Modal Screen */
+        #modal-screen {
+            position: absolute;
+            inset: 0;
+            background: rgba(3, 3, 14, 0.9);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            transition: opacity 0.3s ease;
+        }
+
+        .title-h1 {
+            color: #fff;
+            font-size: clamp(2rem, 6vw, 3.8rem);
+            font-weight: 900;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+            text-shadow: 0 0 15px #00ffff, 0 0 30px #ff0077;
+            margin: 0 0 8px 0;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #9cb3c9;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: clamp(1rem, 3.2vw, 1.3rem);
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-align: center;
+            max-width: 640px;
+            margin: 0 20px 24px 20px;
+            line-height: 1.4;
+        }
+
+        .ctrl-guide {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 700px;
+            margin-bottom: 28px;
+            padding: 0 20px;
+        }
+
+        .guide-pill {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 16px;
+            padding: 6px 12px;
+            font-size: 0.78rem;
+            color: #d1ecff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .guide-key {
+            background: #00ffff;
+            color: #03030b;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 5px;
+            font-size: 0.72rem;
+        }
+
+        .play-btn {
+            background: linear-gradient(135deg, #00ffcc, #0088ff);
+            color: #03030f;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+            padding: 14px 44px;
+            border: none;
+            border-radius: 40px;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.6);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 45px rgba(0, 255, 204, 0.9);
+        }
+
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="score-box">
+                <span class="score-tag player-tag">KAMU (COMMANDER)</span>
+                <span id="player-score" class="score-val">0</span>
+            </div>
+
+            <!-- Active Assistants HUD Countdown -->
+            <div class="active-assistants-panel">
+                <div class="assistant-badge badge-drone" id="badge-drone">
+                    <span>🤖 DRONE TEMPUR</span> <span id="time-drone">20s</span>
+                </div>
+                <div class="assistant-badge badge-vortex" id="badge-vortex">
+                    <span>🌀 VORTEX SINGULARITY</span> <span id="time-vortex">18s</span>
+                </div>
+                <div class="assistant-badge badge-virus" id="badge-virus">
+                    <span>👾 AI SYSTEM CORRUPTED</span> <span id="time-virus">16s</span>
+                </div>
+                <div class="assistant-badge badge-shield" id="badge-shield">
+                    <span>🛡️️ TEMBOK PERISAI</span> <span id="time-shield">25s</span>
+                </div>
+            </div>
+
+            <div class="score-box ai-box">
+                <span id="ai-score" class="score-val">0</span>
+                <div class="boss-tag-wrap">
+                    <span class="score-tag ai-tag" id="ai-status-tag">⚡ APEX CYBER DEITY [LVL 999]</span>
+                </div>
+                <div class="boss-dialogue" id="boss-dialogue-text">ONLINE // PREDICTION 100%</div>
+                <div class="boss-rage-wrap">
+                    <div class="boss-rage-header">
+                        <span id="boss-rage-stage">😡 FRUSTRATION: 0% [CALM]</span>
+                    </div>
+                    <div class="boss-rage-bar">
+                        <div id="boss-rage-fill"></div>
+                    </div>
+                </div>
+                <div class="boss-overdrive-bar">
+                    <div id="boss-overdrive-fill"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-panel">
+            <div class="energy-wrapper">
+                <div class="energy-label">
+                    <span>⚡ CORE GENERATOR</span>
+                    <span id="energy-text">70 / 100</span>
+                </div>
+                <div class="energy-track">
+                    <div id="energy-fill"></div>
+                </div>
+            </div>
+
+            <div class="ability-deck">
+                <button class="skill-btn drone" id="btn-drone" onclick="triggerDrone()">
+                    <span class="skill-icon">🤖</span>
+                    <span class="skill-name">DRONE TEMPUR</span>
+                    <span class="skill-cost">40 [Q] (20d)</span>
+                </button>
+                <button class="skill-btn vortex" id="btn-vortex" onclick="triggerVortex()">
+                    <span class="skill-icon">🌀</span>
+                    <span class="skill-name">VORTEX TRAP</span>
+                    <span class="skill-cost">35 [W] (18d)</span>
+                </button>
+                <button class="skill-btn virus" id="btn-virus" onclick="triggerVirus()">
+                    <span class="skill-icon">👾</span>
+                    <span class="skill-name">VIRUS HACK</span>
+                    <span class="skill-cost">35 [E] (16d)</span>
+                </button>
+                <button class="skill-btn shield" id="btn-shield" onclick="triggerShield()">
+                    <span class="skill-icon">🛡️</span>
+                    <span class="skill-name">TEMBOK ABADI</span>
+                    <span class="skill-cost">30 [R] (25d)</span>
+                </button>
+                <button class="skill-btn smash" id="btn-smash" onclick="triggerSmash()">
+                    <span class="skill-icon">🔥</span>
+                    <span class="skill-name">SUPER SMASH</span>
+                    <span class="skill-cost">25 [Spasi]</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start / GameOver Modal -->
+    <div id="modal-screen">
+        <h1 class="title-h1">AI TORTURE ARENA</h1>
+        <p class="subtitle">Panggil assisten berdurasi panjang, bajak sistem sensor lawan, buat AI linglung, dan nikmati serunya membantai lawan tanpa ampun!</p>
+        
+        <div class="ctrl-guide">
+            <div class="guide-pill"><span class="guide-key">Mouse / Touch</span> Kontrol Paddle</div>
+            <div class="guide-pill"><span class="guide-key">Q</span> Assisten Drone (20 Detik)</div>
+            <div class="guide-pill"><span class="guide-key">W</span> Vortex Lubang Hitam (18 Detik)</div>
+            <div class="guide-pill"><span class="guide-key">E</span> Virus Hack AI (16 Detik)</div>
+            <div class="guide-pill"><span class="guide-key">R</span> Tembok Baja Kebal (25 Detik)</div>
+            <div class="guide-pill"><span class="guide-key">Spasi</span> Super Comet Smash</div>
+        </div>
+
+        <button class="play-btn" id="start-btn">BANTAI AI SEKARANG</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const modalScreen = document.getElementById("modal-screen");
+        const startBtn = document.getElementById("start-btn");
+        const playerScoreEl = document.getElementById("player-score");
+        const aiScoreEl = document.getElementById("ai-score");
+        const aiStatusTag = document.getElementById("ai-status-tag");
+        const bossDialogueEl = document.getElementById("boss-dialogue-text");
+        const bossOverdriveFillEl = document.getElementById("boss-overdrive-fill");
+        const energyFillEl = document.getElementById("energy-fill");
+        const energyTextEl = document.getElementById("energy-text");
+
+        // Assistant Badges & Timers
+        const badgeDrone = document.getElementById("badge-drone");
+        const badgeVortex = document.getElementById("badge-vortex");
+        const badgeVirus = document.getElementById("badge-virus");
+        const badgeShield = document.getElementById("badge-shield");
+        const timeDroneEl = document.getElementById("time-drone");
+        const timeVortexEl = document.getElementById("time-vortex");
+        const timeVirusEl = document.getElementById("time-virus");
+        const timeShieldEl = document.getElementById("time-shield");
+
+        // Skill Buttons
+        const btnDrone = document.getElementById("btn-drone");
+        const btnVortex = document.getElementById("btn-vortex");
+        const btnVirus = document.getElementById("btn-virus");
+        const btnShield = document.getElementById("btn-shield");
+        const btnSmash = document.getElementById("btn-smash");
+
+        let gameState = 'START';
+        let screenShake = 0;
+        let particles = [];
+        let shockwaves = [];
+        let floatTexts = [];
+        let laserBeams = [];
+        let aiAfterimages = [];
+        let aiPrediction = { x: 0, y: 0, active: false };
+        let bossDialogueTimer = 0;
+        let aiDashCooldown = 0;
+
+        let aiRage = 0;                  // 0 to 100+
+        let aiRageLevel = 0;             // 0: Calm, 1: Annoyed, 2: Furious, 3: Berserk, 4: Apocalypse
+        let aiMissiles = [];             // AI Plasma Homing Missiles
+        let aiEmpRings = [];             // AI EMP Shockwave Blasts
+        let phantomBalls = [];           // Glitch Decoy Balls spawned by AI
+        let aiMissileCooldown = 0;
+        let aiEmpCooldown = 0;
+
+        const bossRageFillEl = document.getElementById("boss-rage-fill");
+        const bossRageStageEl = document.getElementById("boss-rage-stage");
+
+        // Assistant Timers (in frames @ 60fps)
+        let droneTimer = 0;   // 20s = 1200 frames
+        let vortexTimer = 0;  // 18s = 1080 frames
+        let virusTimer = 0;   // 16s = 960 frames
+        let shieldTimer = 0;  // 25s = 1500 frames
+
+        // Web Audio Synthesizer
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSfx(type) {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            switch(type) {
+                case 'hit':
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(420, now);
+                    osc.frequency.exponentialRampToValueAtTime(160, now + 0.08);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                    break;
+                case 'drone_zap':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(900, now);
+                    osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                    break;
+                case 'vortex':
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(60, now + 0.4);
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                    break;
+                case 'virus':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(1200, now);
+                    osc.frequency.setValueAtTime(400, now + 0.08);
+                    osc.frequency.setValueAtTime(900, now + 0.15);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.35);
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                    break;
+                case 'shield':
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(660, now + 0.25);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                    break;
+                case 'smash':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(140, now);
+                    osc.frequency.exponentialRampToValueAtTime(25, now + 0.35);
+                    gain.gain.setValueAtTime(0.6, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                    break;
+                case 'score':
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(320, now);
+                    osc.frequency.setValueAtTime(480, now + 0.1);
+                    osc.frequency.setValueAtTime(720, now + 0.2);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+                    osc.start(now);
+                    osc.stop(now + 0.45);
+                    break;
+                case 'boss_dash':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(120, now + 0.18);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+                    osc.start(now);
+                    osc.stop(now + 0.18);
+                    break;
+                case 'boss_counter':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+                    gain.gain.setValueAtTime(0.5, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                    break;
+                case 'boss_purge':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.linearRampToValueAtTime(900, now + 0.2);
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                    break;
+                case 'ai_missile':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(650, now);
+                    osc.frequency.exponentialRampToValueAtTime(90, now + 0.22);
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+                    osc.start(now);
+                    osc.stop(now + 0.22);
+                    break;
+                case 'ai_emp':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.linearRampToValueAtTime(40, now + 0.4);
+                    gain.gain.setValueAtTime(0.5, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                    break;
+                case 'ai_glitch':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(1200, now);
+                    osc.frequency.setValueAtTime(200, now + 0.05);
+                    osc.frequency.setValueAtTime(900, now + 0.1);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                    break;
+            }
+        }
+
+        const player = {
+            x: 35, y: 0,
+            width: 14, height: 110,
+            targetY: 0,
+            color: '#00ffff', glow: '#00ffff',
+            score: 0,
+            energy: 70, maxEnergy: 100,
+            smashArmed: false
+        };
+
+        const ai = {
+            x: 0, y: 0,
+            baseHeight: 110,
+            height: 110,
+            width: 14,
+            color: '#ff0055', glow: '#ff0055',
+            score: 0,
+            baseSpeed: 14.0,           // Kecepatan super tinggi
+            speed: 14.0,
+            targetY: 0,
+            knockbackY: 0,
+            errorOffset: 0,
+            overdriveEnergy: 100,      // Siap membalas smash
+            firewallActive: false,
+            firewallTimer: 0
+        };
+
+        // Assistant Entities
+        const drone = {
+            x: 0, y: 0,
+            targetX: 0, targetY: 0,
+            size: 18,
+            laserCooldown: 0,
+            pulseAngle: 0
+        };
+
+        const vortex = {
+            x: 0, y: 0,
+            radius: 110,
+            angle: 0
+        };
+
+        class Ball {
+            constructor(x, y, vx, vy, isSmash = false) {
+                this.x = x;
+                this.y = y;
+                this.radius = 11;
+                this.vx = vx;
+                this.vy = vy;
+                this.isSmash = isSmash;
+                this.color = isSmash ? '#ffaa00' : '#00ffff';
+                this.glow = isSmash ? '#ff8800' : '#00ffee';
+                this.trail = [];
+            }
+
+            update() {
+                this.trail.push({ x: this.x, y: this.y, color: this.color, r: this.radius });
+                if (this.trail.length > 8) this.trail.shift();
+
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw(ctx) {
+                for (let i = 0; i < this.trail.length; i++) {
+                    const tr = this.trail[i];
+                    ctx.save();
+                    ctx.globalAlpha = (i + 1) / (this.trail.length * 2.5);
+                    ctx.fillStyle = tr.color;
+                    ctx.beginPath();
+                    ctx.arc(tr.x, tr.y, tr.r * (0.4 + 0.6 * (i / this.trail.length)), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                ctx.save();
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = this.isSmash ? 25 : 14;
+                ctx.shadowColor = this.glow;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        let balls = [];
+
+        function spawnMainBall() {
+            balls = [];
+            const baseSpeed = Math.min(canvas.width, canvas.height) * 0.012;
+            const angle = (Math.random() * Math.PI / 4) - (Math.PI / 8);
+            balls.push(new Ball(
+                canvas.width * 0.45,
+                canvas.height / 2,
+                baseSpeed * Math.cos(angle),
+                baseSpeed * Math.sin(angle)
+            ));
+        }
+
+        class Particle {
+            constructor(x, y, color, glow, spd = 6) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.glow = glow;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * spd + 1;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1.0;
+                this.decay = Math.random() * 0.03 + 0.02;
+                this.size = Math.random() * 3 + 2;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+                this.size *= 0.97;
+            }
+            draw(ctx) {
+                if (this.life <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = this.glow;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, Math.max(0.4, this.size), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Shockwave {
+            constructor(x, y, maxRadius, color) {
+                this.x = x;
+                this.y = y;
+                this.radius = 4;
+                this.maxRadius = maxRadius;
+                this.color = color;
+                this.alpha = 1.0;
+            }
+            update() {
+                this.radius += (this.maxRadius - this.radius) * 0.12 + 2.5;
+                this.alpha = 1 - (this.radius / this.maxRadius);
+            }
+            draw(ctx) {
+                if (this.alpha <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.alpha);
+                ctx.strokeStyle = this.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        class FloatText {
+            constructor(text, x, y, color) {
+                this.text = text;
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.life = 1.0;
+                this.vy = -1.4;
+            }
+            update() {
+                this.y += this.vy;
+                this.life -= 0.018;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.font = 'bold 1.15rem "Orbitron", sans-serif';
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = this.color;
+                ctx.textAlign = 'center';
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.restore();
+            }
+        }
+
+        function createBurst(x, y, color, count = 18, spd = 6) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color, color, spd));
+            }
+        }
+
+        function addFloatText(text, x, y, color) {
+            floatTexts.push(new FloatText(text, x, y, color));
+        }
+
+        function setBossDialogue(text) {
+            if (bossDialogueEl) {
+                bossDialogueEl.innerText = text;
+                bossDialogueTimer = 90;
+            }
+        }
+
+        function triggerAiFrustration() {
+            // Frustration accumulates with each goal scored against AI
+            aiRage += 22 + (player.score * 4);
+            const cappedPercent = Math.min(100, aiRage);
+
+            if (bossRageFillEl) bossRageFillEl.style.width = cappedPercent + '%';
+
+            // Determine Rage Phase
+            if (aiRage >= 90) {
+                aiRageLevel = 4;
+                bossRageStageEl.innerText = `🔥 BERSERK APOCALYPSE: ${Math.floor(aiRage)}%`;
+                aiStatusTag.innerText = "💥 TOTAL MELTDOWN [LEVEL 9999]";
+                aiStatusTag.style.color = "#ff0000";
+                aiStatusTag.classList.add('rage-glitch');
+            } else if (aiRage >= 65) {
+                aiRageLevel = 3;
+                bossRageStageEl.innerText = `⚡ PSYCHOTIC RAGE: ${Math.floor(aiRage)}%`;
+                aiStatusTag.innerText = "⚡ HYPER OVERCLOCKED";
+                aiStatusTag.style.color = "#ff0055";
+            } else if (aiRage >= 40) {
+                aiRageLevel = 2;
+                bossRageStageEl.innerText = `💢 FURIOUS: ${Math.floor(aiRage)}%`;
+                aiStatusTag.innerText = "💢 CORE OVERHEATING";
+                aiStatusTag.style.color = "#ff4400";
+            } else if (aiRage >= 18) {
+                aiRageLevel = 1;
+                bossRageStageEl.innerText = `⚠️ AGITATED: ${Math.floor(aiRage)}%`;
+                aiStatusTag.innerText = "⚠️ ANOMALY DETECTED";
+            } else {
+                aiRageLevel = 0;
+                bossRageStageEl.innerText = `😡 FRUSTRATION: ${Math.floor(aiRage)}% [CALM]`;
+            }
+
+            // Frustration Dialogues (escalating tantrums)
+            const calmQuotes = ["SUBOPTIMAL TIMING.", "RE-CALIBRATING REFLEXES...", "STATISTICAL FLUKE."];
+            const agitatedQuotes = ["HOW DID YOU HIT THAT?!", "LUCKY SHOT, INSECT!", "ERROR IN PREDICTION ENGINE!!"];
+            const furiousQuotes = ["IMPOSSIBLE! CEASE SCORING!", "STOP MOCKING MY ALGORITHMS!", "I WILL DESTROY YOUR PADDLE!"];
+            const berserkQuotes = ["CHEATER! DIE DIE DIE!", "MAXIMUM OVERCLOCK ENGAGED!!!", "I AM A GOD, YOU ARE DUST!"];
+            const meltdownQuotes = ["OVERHEAT 9999%! TOTAL ANNIHILATION!", "CRITICAL SYSTEM FAILURE! DIE WITH ME!", "DELETE! DELETE! EXTERMINATE!"];
+
+            let pool = calmQuotes;
+            if (aiRageLevel === 1) pool = agitatedQuotes;
+            else if (aiRageLevel === 2) pool = furiousQuotes;
+            else if (aiRageLevel === 3) pool = berserkQuotes;
+            else if (aiRageLevel >= 4) pool = meltdownQuotes;
+
+            const chosen = pool[Math.floor(Math.random() * pool.length)];
+            setBossDialogue(chosen);
+            playSfx('ai_glitch');
+        }
+
+        // Omniscient trajectory prediction simulator (calculates infinite wall reflections)
+        function predictBallLanding(ball, targetX) {
+            if (ball.vx <= 0) return canvas.height / 2;
+
+            let simX = ball.x;
+            let simY = ball.y;
+            let simVx = ball.vx;
+            let simVy = ball.vy;
+            let maxSteps = 350;
+
+            while (simX < targetX && maxSteps > 0) {
+                simX += simVx;
+                simY += simVy;
+
+                if (simY - ball.radius <= 0) {
+                    simY = ball.radius;
+                    simVy *= -1;
+                } else if (simY + ball.radius >= canvas.height) {
+                    simY = canvas.height - ball.radius;
+                    simVy *= -1;
+                }
+                maxSteps--;
+            }
+
+            return simY;
+        }
+
+        function addEnergy(val) {
+            player.energy = Math.min(player.maxEnergy, player.energy + val);
+            updateEnergyUI();
+        }
+
+        function updateEnergyUI() {
+            const pct = (player.energy / player.maxEnergy) * 100;
+            energyFillEl.style.width = pct + '%';
+            energyTextEl.innerText = `${Math.floor(player.energy)} / 100`;
+
+            btnDrone.classList.toggle('ready', player.energy >= 40);
+            btnVortex.classList.toggle('ready', player.energy >= 35);
+            btnVirus.classList.toggle('ready', player.energy >= 35);
+            btnShield.classList.toggle('ready', player.energy >= 30);
+            btnSmash.classList.toggle('ready', player.energy >= 25);
+
+            btnDrone.classList.toggle('active-glow', droneTimer > 0);
+            btnVortex.classList.toggle('active-glow', vortexTimer > 0);
+            btnVirus.classList.toggle('active-glow', virusTimer > 0);
+            btnShield.classList.toggle('active-glow', shieldTimer > 0);
+            btnSmash.classList.toggle('active-glow', player.smashArmed);
+
+            // Assistant Timer Badges
+            badgeDrone.classList.toggle('active', droneTimer > 0);
+            if (droneTimer > 0) timeDroneEl.innerText = `${Math.ceil(droneTimer / 60)}s`;
+
+            badgeVortex.classList.toggle('active', vortexTimer > 0);
+            if (vortexTimer > 0) timeVortexEl.innerText = `${Math.ceil(vortexTimer / 60)}s`;
+
+            badgeVirus.classList.toggle('active', virusTimer > 0);
+            if (virusTimer > 0) timeVirusEl.innerText = `${Math.ceil(virusTimer / 60)}s`;
+
+            badgeShield.classList.toggle('active', shieldTimer > 0);
+            if (shieldTimer > 0) timeShieldEl.innerText = `${Math.ceil(shieldTimer / 60)}s`;
+        }
+
+        // 1. Assisten Drone Tempur (Durasi 20s)
+        function triggerDrone() {
+            if (player.energy >= 40) {
+                player.energy -= 40;
+                droneTimer = 1200; // 20 detik
+                drone.x = player.x + 120;
+                drone.y = player.y;
+                createBurst(drone.x, drone.y, '#00ffcc', 25);
+                shockwaves.push(new Shockwave(drone.x, drone.y, 160, '#00ffcc'));
+                addFloatText("🤖 DRONE SIAP TEMPUR! (20s)", canvas.width * 0.35, canvas.height * 0.4, "#00ffcc");
+                playSfx('drone_zap');
+                updateEnergyUI();
+            }
+        }
+
+        // 2. Assisten Vortex Singularity Trap (Durasi 18s)
+        function triggerVortex() {
+            if (player.energy >= 35) {
+                player.energy -= 35;
+                vortexTimer = 1080; // 18 detik
+                vortex.x = canvas.width * 0.76;
+                vortex.y = canvas.height * 0.5;
+                shockwaves.push(new Shockwave(vortex.x, vortex.y, 200, '#bb44ff'));
+                addFloatText("🌀 VORTEX SINGULARITY AKTIF! (18s)", vortex.x, vortex.y - 80, "#d680ff");
+                playSfx('vortex');
+                updateEnergyUI();
+            }
+        }
+
+        // 3. Cyber Virus Malware Hack (Durasi 16s)
+        function triggerVirus() {
+            if (player.energy >= 35) {
+                player.energy -= 35;
+                virusTimer = 960; // 16 detik
+                screenShake = 16;
+                shockwaves.push(new Shockwave(ai.x, ai.y + ai.height / 2, 220, '#ff0055'));
+                createBurst(ai.x, ai.y + ai.height / 2, '#ff0055', 30);
+                addFloatText("👾 AI HACKED! SISTEM KACAU! (16s)", ai.x - 120, ai.y, "#ff0055");
+                aiStatusTag.innerText = "MALFUNCTION!";
+                aiStatusTag.style.color = "#ff0055";
+                playSfx('virus');
+                updateEnergyUI();
+            }
+        }
+
+        // 4. Tembok Perisai Baja Abadi (Durasi 25s)
+        function triggerShield() {
+            if (player.energy >= 30) {
+                player.energy -= 30;
+                shieldTimer = 1500; // 25 detik
+                shockwaves.push(new Shockwave(player.x, canvas.height / 2, canvas.height * 0.7, '#00bfff'));
+                addFloatText("🛡️️ TEMBOK PERISAI ABADI! (25s)", player.x + 80, canvas.height * 0.3, "#00bfff");
+                playSfx('shield');
+                updateEnergyUI();
+            }
+        }
+
+        // 5. Super Smash (Pukulan Komet Api)
+        function triggerSmash() {
+            if (player.energy >= 25 && !player.smashArmed) {
+                player.energy -= 25;
+                player.smashArmed = true;
+                addFloatText("🔥 SMASH READY!", player.x + 70, player.y + 40, "#ffcc00");
+                playSfx('smash');
+                updateEnergyUI();
+            }
+        }
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (gameState !== 'PLAYING') return;
+
+            if (e.code === 'KeyQ') triggerDrone();
+            else if (e.code === 'KeyW') triggerVortex();
+            else if (e.code === 'KeyE') triggerVirus();
+            else if (e.code === 'KeyR') triggerShield();
+            else if (e.code === 'Space') {
+                e.preventDefault();
+                triggerSmash();
+            }
+        });
+
+        // Mouse and Touch tracking
+        function handlePointerMove(clientY) {
+            player.targetY = clientY - player.height / 2;
+            if (player.targetY < 0) player.targetY = 0;
+            if (player.targetY + player.height > canvas.height) player.targetY = canvas.height - player.height;
+        }
+
+        window.addEventListener('mousemove', (e) => handlePointerMove(e.clientY));
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) handlePointerMove(e.touches[0].clientY);
+        }, { passive: true });
+
+        function updatePhysics() {
+            if (gameState !== 'PLAYING') return;
+
+            // Passive energy boost (+0.07 / frame)
+            addEnergy(0.07);
+
+            // Smooth player paddle interpolation
+            player.y += (player.targetY - player.y) * 0.35;
+
+            // AI Boss Overdrive generation
+            ai.overdriveEnergy = Math.min(100, ai.overdriveEnergy + 0.12);
+            if (bossOverdriveFillEl) {
+                bossOverdriveFillEl.style.width = ai.overdriveEnergy + '%';
+            }
+
+            // Dynamic speed scaling: AI gets 25% faster for every rage stage!
+            const rageSpeedMultiplier = 1 + (aiRage * 0.015);
+            ai.speed = ai.baseSpeed * rageSpeedMultiplier;
+
+            // At extreme rage, AI paddle length expands into a Titan Blade!
+            if (aiRageLevel >= 4) {
+                ai.height = ai.baseHeight * 1.45;
+            } else if (aiRageLevel >= 3) {
+                ai.height = ai.baseHeight * 1.25;
+            } else {
+                ai.height = ai.baseHeight;
+            }
+
+            // Dash cooldown drops to near-zero as AI loses its mind!
+            const maxDashCooldown = Math.max(3, 15 - aiRageLevel * 3);
+            if (aiDashCooldown > 0) aiDashCooldown--;
+
+            // AI Missile and EMP cooldown timers
+            if (aiMissileCooldown > 0) aiMissileCooldown--;
+            if (aiEmpCooldown > 0) aiEmpCooldown--;
+
+            // ==========================================
+            // 💥 AI FRUSTRATION ABILITY 1: PLASMA MISSILE BARRAGE
+            // ==========================================
+            if (aiRageLevel >= 2 && aiMissileCooldown <= 0) {
+                aiMissileCooldown = Math.max(90, 220 - aiRageLevel * 35);
+                const missileSpeed = 8 + aiRageLevel * 1.5;
+                aiMissiles.push({
+                    x: ai.x - 10,
+                    y: ai.y + ai.height * Math.random(),
+                    vx: -missileSpeed,
+                    vy: (player.y - ai.y) * 0.015,
+                    radius: 7,
+                    life: 180,
+                    color: '#ff0033'
+                });
+                playSfx('ai_missile');
+                screenShake = 6;
+                addFloatText("💥 AI PLASMA MISSILE!", ai.x - 100, ai.y, "#ff0033");
+            }
+
+            // ==========================================
+            // ⚡ AI FRUSTRATION ABILITY 2: GRAVITY SHOCKWAVE (EMP)
+            // ==========================================
+            if (aiRageLevel >= 3 && aiEmpCooldown <= 0 && Math.random() < 0.008) {
+                aiEmpCooldown = 280;
+                aiEmpRings.push({
+                    x: ai.x,
+                    y: ai.y + ai.height / 2,
+                    radius: 10,
+                    maxRadius: canvas.width * 0.85,
+                    color: '#ff0055',
+                    alpha: 1.0
+                });
+                playSfx('ai_emp');
+                screenShake = 18;
+                addFloatText("⚡ AI CORRUPTED EMP BURST!", ai.x - 150, ai.y + 40, "#ff00ff");
+                setBossDialogue("FALL BEFORE MY MIGHT!!");
+            }
+
+            // Update AI Plasma Missiles
+            for (let i = aiMissiles.length - 1; i >= 0; i--) {
+                const m = aiMissiles[i];
+                m.x += m.vx;
+                m.y += m.vy;
+                m.life--;
+
+                // Trail particle
+                if (Math.random() < 0.4) {
+                    particles.push(new Particle(m.x, m.y, '#ff0055', '#ff0000', 3));
+                }
+
+                // Hit Player Paddle: Knock player and interrupt movement
+                if (m.x <= player.x + player.width && m.x >= player.x - 10 &&
+                    m.y >= player.y - 10 && m.y <= player.y + player.height + 10) {
+                    player.targetY += (Math.random() > 0.5 ? 1 : -1) * 85;
+                    screenShake = 16;
+                    shockwaves.push(new Shockwave(m.x, m.y, 110, '#ff0033'));
+                    createBurst(m.x, m.y, '#ff0033', 20, 8);
+                    playSfx('smash');
+                    addFloatText("⚠️ DIRECT HIT! DISORIENTED!", player.x + 40, player.y, "#ff0033");
+                    aiMissiles.splice(i, 1);
+                    continue;
+                }
+
+                if (m.x < 0 || m.life <= 0) {
+                    aiMissiles.splice(i, 1);
+                }
+            }
+
+            // Update AI EMP Shockwaves
+            for (let i = aiEmpRings.length - 1; i >= 0; i--) {
+                const emp = aiEmpRings[i];
+                emp.radius += 14;
+                emp.alpha = 1 - (emp.radius / emp.maxRadius);
+
+                // Check distance to player
+                const d = Math.abs(emp.x - player.x);
+                if (Math.abs(emp.radius - d) < 15) {
+                    // Push player paddle
+                    player.targetY += (Math.random() - 0.5) * 60;
+                    screenShake = 10;
+                }
+
+                if (emp.alpha <= 0) aiEmpRings.splice(i, 1);
+            }
+
+            // Update Phantom Decoy Balls
+            for (let i = phantomBalls.length - 1; i >= 0; i--) {
+                const pb = phantomBalls[i];
+                pb.x += pb.vx;
+                pb.y += pb.vy;
+                pb.life--;
+
+                if (pb.y - 8 <= 0 || pb.y + 8 >= canvas.height) pb.vy *= -1;
+                if (pb.x < 0 || pb.life <= 0) {
+                    createBurst(pb.x, pb.y, '#ff00aa', 10, 4);
+                    phantomBalls.splice(i, 1);
+                }
+            }
+
+            if (bossDialogueTimer > 0) {
+                bossDialogueTimer--;
+                if (bossDialogueTimer <= 0) {
+                    bossDialogueEl.innerText = ai.firewallActive ? "FIREWALL ACTIVE" : "PREDICTION: 100%";
+                }
+            }
+
+            if (aiDashCooldown > 0) aiDashCooldown--;
+
+            // Update Timers
+            if (droneTimer > 0) {
+                droneTimer--;
+                if (droneTimer <= 0) updateEnergyUI();
+            }
+            if (vortexTimer > 0) {
+                vortexTimer--;
+                if (vortexTimer <= 0) updateEnergyUI();
+            }
+            if (virusTimer > 0) {
+                virusTimer--;
+                // AI Boss Firewall Resist: Purges virus quickly!
+                if (!ai.firewallActive && Math.random() < 0.04) {
+                    ai.firewallActive = true;
+                    ai.firewallTimer = 180;
+                    playSfx('boss_purge');
+                    screenShake = 14;
+                    shockwaves.push(new Shockwave(ai.x, ai.y + ai.height / 2, 180, '#ff0055'));
+                    addFloatText("🛡️ FIREWALL PURGE ACTIVATED!", ai.x - 120, ai.y, "#ffffff");
+                    setBossDialogue("FIREWALL PURGE // ANOMALY BLOCKED");
+                }
+
+                if (ai.firewallActive) {
+                    ai.height = ai.baseHeight;
+                    ai.speed = ai.baseSpeed * 1.2;
+                } else {
+                    ai.height = ai.baseHeight * 0.75;
+                    ai.speed = ai.baseSpeed * 0.75;
+                }
+
+                if (virusTimer <= 0) {
+                    aiStatusTag.innerText = "⚡ APEX CYBER DEITY [LVL 999]";
+                    aiStatusTag.style.color = "#ff0077";
+                    updateEnergyUI();
+                }
+            } else {
+                ai.height = ai.baseHeight;
+                ai.speed = ai.baseSpeed;
+                ai.firewallActive = false;
+            }
+
+            if (shieldTimer > 0) {
+                shieldTimer--;
+                if (shieldTimer <= 0) updateEnergyUI();
+            }
+
+            // Update UI timer texts every few frames
+            if (Math.floor(Date.now() / 200) % 2 === 0) {
+                updateEnergyUI();
+            }
+
+            // ==========================================
+            // ASSISTEN 1: 🤖 DRONE TEMPUR BEHAVIOR
+            // ==========================================
+            if (droneTimer > 0) {
+                drone.pulseAngle += 0.08;
+                // Drone stays ahead of player paddle and tracks the ball
+                let closestBall = balls[0];
+                if (closestBall) {
+                    drone.targetX = canvas.width * 0.28 + Math.sin(drone.pulseAngle) * 30;
+                    drone.targetY = closestBall.y;
+                } else {
+                    drone.targetX = player.x + 140;
+                    drone.targetY = player.y + player.height / 2;
+                }
+
+                drone.x += (drone.targetX - drone.x) * 0.18;
+                drone.y += (drone.targetY - drone.y) * 0.18;
+
+                // Drone Interception & Defense
+                balls.forEach(b => {
+                    const ddx = b.x - drone.x;
+                    const ddy = b.y - drone.y;
+                    const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+
+                    if (dist < drone.size + b.radius && b.vx < 0) {
+                        // Drone rebounds ball towards AI with super speed!
+                        b.vx = Math.abs(b.vx) * 1.35 + 3;
+                        b.vy = (Math.random() - 0.5) * 10;
+                        b.color = '#00ffcc';
+                        b.glow = '#00ffcc';
+                        screenShake = 10;
+                        shockwaves.push(new Shockwave(drone.x, drone.y, 90, '#00ffcc'));
+                        createBurst(drone.x, drone.y, '#00ffcc', 16);
+                        addFloatText("⚡ DRONE INTERCEPT!", drone.x + 40, drone.y - 20, "#00ffcc");
+                        playSfx('drone_zap');
+
+                        // AI Boss resists drone knockback and shoots laser back at the drone!
+                        if (Math.random() < 0.7) {
+                            laserBeams.push({
+                                x1: ai.x, y1: ai.y + ai.height / 2,
+                                x2: drone.x, y2: drone.y,
+                                life: 1.0, color: '#ff0055'
+                            });
+                            screenShake = 12;
+                            createBurst(drone.x, drone.y, '#ff0055', 18);
+                            setBossDialogue("COUNTER-LASER ENGAGED");
+                            addFloatText("⚡ AI COUNTER-LASER!", drone.x - 30, drone.y + 25, "#ff0055");
+                        } else {
+                            ai.knockbackY = (Math.random() > 0.5 ? 1 : -1) * 35;
+                        }
+                    }
+                });
+
+                // Drone thruster particle trail
+                if (Math.random() < 0.4) {
+                    particles.push(new Particle(drone.x - 10, drone.y, '#00ffcc', '#00ffcc', 2));
+                }
+            }
+
+            // ==========================================
+            // ASSISTEN 2: 🌀 VORTEX SINGULARITY BEHAVIOR
+            // ==========================================
+            if (vortexTimer > 0) {
+                vortex.angle += 0.05;
+                vortex.y = (canvas.height / 2) + Math.sin(vortex.angle * 1.5) * (canvas.height * 0.25);
+
+                balls.forEach(b => {
+                    const dx = vortex.x - b.x;
+                    const dy = vortex.y - b.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 260 && dist > 15) {
+                        // Slingshot curved pull towards AI corners!
+                        const force = (1 - dist / 260) * 1.8;
+                        b.vx += (dx / dist) * force + 0.35; // Pull forward to AI goal
+                        b.vy += (dy / dist) * force * 1.3;
+                    }
+                });
+
+                // Vortex swirls particles
+                if (Math.random() < 0.6) {
+                    const pAngle = Math.random() * Math.PI * 2;
+                    const pRad = Math.random() * 80 + 20;
+                    particles.push(new Particle(
+                        vortex.x + Math.cos(pAngle) * pRad,
+                        vortex.y + Math.sin(pAngle) * pRad,
+                        '#bb44ff', '#d680ff', 1.5
+                    ));
+                }
+            }
+
+            // ==========================================
+            // 🧠 GODLIKE AI (1000x SMARTER & STRONGER)
+            // ==========================================
+            let fastestThreatBall = null;
+            let highestVx = 0;
+
+            for (const b of balls) {
+                if (b.vx > 0 && b.vx > highestVx) {
+                    highestVx = b.vx;
+                    fastestThreatBall = b;
+                }
+            }
+
+            if (fastestThreatBall) {
+                const predictedY = predictBallLanding(fastestThreatBall, ai.x);
+                aiPrediction.x = ai.x;
+                aiPrediction.y = predictedY;
+                aiPrediction.active = true;
+
+                // Taktik serang cerdas: Arahkan pantulan ke pojok terjauh dari posisi paddle pemain
+                const targetCornerOffset = (player.y > canvas.height / 2) ? -ai.height * 0.42 : ai.height * 0.42;
+                ai.targetY = (predictedY - ai.height / 2) + targetCornerOffset;
+
+                const distY = ai.targetY - ai.y;
+
+                // SUPERSONIC FLASH-STEP DASH: Jika bola super cepat atau smash datang dan jarak jauh
+                if (Math.abs(distY) > 60 && aiDashCooldown <= 0 && fastestThreatBall.x > canvas.width * 0.3) {
+                    // Flash step teleportation dash
+                    aiAfterimages.push({ x: ai.x, y: ai.y, h: ai.height, w: ai.width, alpha: 0.9 });
+                    ai.y += Math.sign(distY) * Math.min(Math.abs(distY), 85);
+                    aiDashCooldown = 15;
+                    screenShake = 8;
+                    playSfx('boss_dash');
+                    createBurst(ai.x, ai.y + ai.height / 2, '#ff0077', 15, 8);
+                    setBossDialogue("FLASH-STEP INTERCEPT!");
+                } else {
+                    // High-speed smooth tracking
+                    ai.y += Math.sign(distY) * Math.min(Math.abs(distY), ai.speed);
+                }
+            } else {
+                aiPrediction.active = false;
+                // Return gracefully to tactical center
+                const centerDiff = (canvas.height / 2 - ai.height / 2) - ai.y;
+                ai.y += Math.sign(centerDiff) * Math.min(Math.abs(centerDiff), ai.speed * 0.5);
+            }
+
+            // Apply minor knockback dampening
+            if (Math.abs(ai.knockbackY) > 0.5) {
+                ai.y += ai.knockbackY * 0.2;
+                ai.knockbackY *= 0.82;
+            }
+
+            if (ai.y < 0) ai.y = 0;
+            if (ai.y + ai.height > canvas.height) ai.y = canvas.height - ai.height;
+
+            // Decay afterimages
+            for (let i = aiAfterimages.length - 1; i >= 0; i--) {
+                aiAfterimages[i].alpha -= 0.08;
+                if (aiAfterimages[i].alpha <= 0) aiAfterimages.splice(i, 1);
+            }
+
+            for (let i = balls.length - 1; i >= 0; i--) {
+                const b = balls[i];
+                b.update();
+
+                // Top & Bottom Bounce
+                if (b.y - b.radius <= 0) {
+                    b.y = b.radius;
+                    b.vy *= -1;
+                    playSfx('hit');
+                    createBurst(b.x, 0, b.color, 8);
+                } else if (b.y + b.radius >= canvas.height) {
+                    b.y = canvas.height - b.radius;
+                    b.vy *= -1;
+                    playSfx('hit');
+                    createBurst(b.x, canvas.height, b.color, 8);
+                }
+
+                // ASSISTEN 4: 🛡️ PERISAI BAJA ABADI BOUNCE
+                if (shieldTimer > 0 && b.x - b.radius <= player.x + 4 && b.vx < 0) {
+                    b.vx = Math.abs(b.vx) * 1.1 + 1;
+                    b.x = player.x + 12;
+                    playSfx('shield');
+                    screenShake = 7;
+                    shockwaves.push(new Shockwave(b.x, b.y, 80, '#00bfff'));
+                    addFloatText("🛡️ BLOCKED BY SHIELD!", b.x + 40, b.y, "#00bfff");
+                }
+
+                // Player Paddle Hit
+                if (b.vx < 0 &&
+                    b.x - b.radius <= player.x + player.width &&
+                    b.x + b.radius >= player.x &&
+                    b.y + b.radius >= player.y &&
+                    b.y - b.radius <= player.y + player.height) {
+
+                    const hitOffset = (b.y - (player.y + player.height / 2)) / (player.height / 2);
+                    const angle = hitOffset * (Math.PI / 3.6);
+
+                    if (player.smashArmed) {
+                        player.smashArmed = false;
+                        b.isSmash = true;
+                        b.color = '#ffaa00';
+                        b.glow = '#ff8800';
+                        const smashSpeed = Math.max(Math.sqrt(b.vx * b.vx + b.vy * b.vy) * 1.85, 17);
+                        b.vx = Math.cos(angle) * smashSpeed;
+                        b.vy = Math.sin(angle) * smashSpeed;
+
+                        screenShake = 22;
+                        shockwaves.push(new Shockwave(player.x + player.width, b.y, 150, '#ffaa00'));
+                        createBurst(player.x + player.width, b.y, '#ffaa00', 30, 9);
+                        addFloatText("💥 COMET SMASH!", player.x + 80, b.y - 15, "#ffaa00");
+                        playSfx('smash');
+                        addEnergy(15);
+                    } else {
+                        const curSpd = Math.min(Math.sqrt(b.vx * b.vx + b.vy * b.vy) + 0.35, 18);
+                        b.vx = Math.cos(angle) * curSpd;
+                        b.vy = Math.sin(angle) * curSpd;
+                        b.isSmash = false;
+                        b.color = '#00ffff';
+                        b.glow = '#00ffff';
+
+                        screenShake = 5;
+                        createBurst(player.x + player.width, b.y, '#00ffff', 12);
+                        playSfx('hit');
+                        addEnergy(20);
+                    }
+
+                    b.x = player.x + player.width + b.radius;
+                    ai.errorOffset = (Math.random() - 0.5) * 55;
+                }
+
+                // 💥 GODLIKE AI PADDLE HIT & COUNTER-ATTACK!
+                if (b.vx > 0 &&
+                    b.x + b.radius >= ai.x &&
+                    b.x - b.radius <= ai.x + ai.width &&
+                    b.y + b.radius >= ai.y &&
+                    b.y - b.radius <= ai.y + ai.height) {
+
+                    const hitOffset = (b.y - (ai.y + ai.height / 2)) / (ai.height / 2);
+                    // AI calculates precision razor-sharp trajectory
+                    const angle = hitOffset * (Math.PI / 3.2);
+
+                    let returnSpeed = Math.sqrt(b.vx * b.vx + b.vy * b.vy) * 1.05 + 1.2;
+
+                    // When frustrated, AI ball return gets supercharged!
+                    returnSpeed *= (1 + aiRage * 0.006);
+
+                    // ==========================================
+                    // 👻 AI FRUSTRATION ABILITY 3: PHANTOM DECOY BALLS
+                    // ==========================================
+                    if (aiRageLevel >= 1 && Math.random() < (0.2 + aiRageLevel * 0.15)) {
+                        const fakeAngle1 = (Math.random() - 0.5) * 0.9;
+                        phantomBalls.push({
+                            x: ai.x - 15,
+                            y: b.y,
+                            vx: -Math.abs(b.vx) * 0.95,
+                            vy: Math.sin(fakeAngle1) * returnSpeed,
+                            life: 90,
+                            color: 'rgba(255, 0, 128, 0.7)'
+                        });
+                        addFloatText("👻 PHANTOM DECOY!", ai.x - 70, b.y - 20, "#ff00bb");
+                        playSfx('ai_glitch');
+                    }
+
+                    // AI BOSS COUNTER-SMASH: If ball was a smash or AI Overdrive is ready
+                    if (b.isSmash || ai.overdriveEnergy >= 50) {
+                        ai.overdriveEnergy = Math.max(0, ai.overdriveEnergy - 50);
+                        returnSpeed = Math.max(returnSpeed * 1.5, 19.5);
+                        b.isSmash = true;
+                        b.color = '#ff0055';
+                        b.glow = '#ff0033';
+                        screenShake = 24 + aiRageLevel * 3;
+                        shockwaves.push(new Shockwave(ai.x, b.y, 160, '#ff0055'));
+                        createBurst(ai.x, b.y, '#ff0055', 28, 10);
+                        playSfx('boss_counter');
+                        addFloatText("⚡ AI GOD COUNTER-SMASH!", ai.x - 140, b.y, "#ff0055");
+                        setBossDialogue(aiRageLevel >= 3 ? "TAKE THIS AND ROT!!" : "COUNTER-SMASH // 100% LETHALITY");
+                    } else {
+                        b.isSmash = false;
+                        b.color = '#ff0077';
+                        b.glow = '#ff0077';
+                        screenShake = 9;
+                        createBurst(ai.x, b.y, '#ff0077', 16);
+                        playSfx('hit');
+                        setBossDialogue(aiRageLevel >= 2 ? "DEFLECTED! DON'T GET COCKY!" : "DEFLECTED");
+                    }
+
+                    b.vx = -Math.abs(Math.cos(angle) * returnSpeed);
+                    b.vy = Math.sin(angle) * returnSpeed;
+                    b.x = ai.x - b.radius;
+                }
+
+                // AI Scores Goal (Left wall)
+                if (b.x + b.radius < 0) {
+                    balls.splice(i, 1);
+                    if (balls.length === 0) {
+                        ai.score++;
+                        aiScoreEl.innerText = ai.score;
+                        screenShake = 28;
+                        playSfx('boss_counter');
+                        createBurst(0, b.y, '#ff0055', 45, 12);
+                        shockwaves.push(new Shockwave(0, b.y, 250, '#ff0055'));
+                        addFloatText("💀 ANNIHILATED BY AI!", canvas.width * 0.25, canvas.height / 2, "#ff0055");
+                        // Scored goal calms AI slightly
+                        aiRage = Math.max(0, aiRage - 12);
+                        triggerAiFrustration();
+                        setBossDialogue(aiRageLevel >= 2 ? "KNEEL BEFORE PERFECTION!" : "TARGET TERMINATED // FLAWLESS");
+                        setTimeout(spawnMainBall, 600);
+                    }
+                }
+                // PLAYER SCORES GOAL! (Right wall - AI humiliated & Frustration spikes!)
+                else if (b.x - b.radius > canvas.width) {
+                    balls.splice(i, 1);
+                    if (balls.length === 0) {
+                        player.score++;
+                        playerScoreEl.innerText = player.score;
+                        screenShake = 26 + aiRageLevel * 4;
+                        playSfx('score');
+                        createBurst(canvas.width, b.y, '#00ffff', 45, 10);
+                        shockwaves.push(new Shockwave(canvas.width, b.y, 280, '#00ffff'));
+                        addFloatText("GOOOAL! AI HANCUR! +45 ⚡", canvas.width * 0.65, canvas.height / 2, "#00ffff");
+                        addEnergy(45);
+                        
+                        triggerAiFrustration();
+                        setTimeout(spawnMainBall, 600);
+                    }
+                }
+            }
+
+            // Update Laser Beams
+            for (let i = laserBeams.length - 1; i >= 0; i--) {
+                laserBeams[i].life -= 0.08;
+                if (laserBeams[i].life <= 0) laserBeams.splice(i, 1);
+            }
+
+            // Update VFX Lists
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                shockwaves[i].update();
+                if (shockwaves[i].alpha <= 0) shockwaves.splice(i, 1);
+            }
+            for (let i = floatTexts.length - 1; i >= 0; i--) {
+                floatTexts[i].update();
+                if (floatTexts[i].life <= 0) floatTexts.splice(i, 1);
+            }
+        }
+
+        function render() {
+            ctx.fillStyle = "rgba(3, 3, 14, 0.38)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+
+            // Screen shake
+            if (screenShake > 0) {
+                const rx = (Math.random() - 0.5) * screenShake;
+                const ry = (Math.random() - 0.5) * screenShake;
+                ctx.translate(rx, ry);
+                screenShake *= 0.88;
+                if (screenShake < 0.4) screenShake = 0;
+            }
+
+            // Center Net
+            ctx.strokeStyle = "rgba(0, 255, 255, 0.12)";
+            ctx.lineWidth = 3;
+            ctx.setLineDash([12, 16]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw AI Omniscient Predictive Laser Line
+            if (aiPrediction.active) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 0, 85, 0.35)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([6, 6]);
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ff0055';
+                ctx.beginPath();
+                ctx.moveTo(canvas.width * 0.45, aiPrediction.y);
+                ctx.lineTo(ai.x, aiPrediction.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Draw prediction reticle
+                ctx.strokeStyle = '#ff0055';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(ai.x - 10, aiPrediction.y, 7, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Draw AI Boss Afterimages (Supersonic Dash Trails)
+            aiAfterimages.forEach(img => {
+                ctx.save();
+                ctx.globalAlpha = img.alpha * 0.6;
+                ctx.fillStyle = '#ff0055';
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ff0077';
+                ctx.fillRect(img.x, img.y, img.w, img.h);
+                ctx.restore();
+            });
+
+            // Draw Assisten 4: Shield Wall
+            if (shieldTimer > 0) {
+                ctx.save();
+                ctx.strokeStyle = '#00bfff';
+                ctx.lineWidth = 8;
+                ctx.shadowBlur = 22;
+                ctx.shadowColor = '#00bfff';
+                ctx.beginPath();
+                ctx.moveTo(player.x - 10, 0);
+                ctx.lineTo(player.x - 10, canvas.height);
+                ctx.stroke();
+
+                // Shield hexagonal grid pattern
+                ctx.strokeStyle = 'rgba(0, 191, 255, 0.2)';
+                ctx.lineWidth = 2;
+                for (let y = 0; y < canvas.height; y += 40) {
+                    ctx.strokeRect(player.x - 14, y, 16, 20);
+                }
+                ctx.restore();
+            }
+
+            // Draw Assisten 2: Vortex Singularity
+            if (vortexTimer > 0) {
+                ctx.save();
+                ctx.translate(vortex.x, vortex.y);
+                ctx.rotate(vortex.angle);
+
+                // Vortex spiral rings
+                for (let r = 20; r <= vortex.radius; r += 25) {
+                    ctx.strokeStyle = `rgba(187, 68, 255, ${0.8 - r / vortex.radius * 0.6})`;
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#bb44ff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r, 0, Math.PI * 1.5);
+                    ctx.stroke();
+                }
+
+                // Core Blackhole
+                ctx.fillStyle = '#110022';
+                ctx.beginPath();
+                ctx.arc(0, 0, 16, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Draw Laser Beams from Drone
+            laserBeams.forEach(lb => {
+                ctx.save();
+                ctx.globalAlpha = lb.life;
+                ctx.strokeStyle = lb.color;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = lb.color;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(lb.x1, lb.y1);
+                ctx.lineTo(lb.x2, lb.y2);
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // Draw Assisten 1: 🤖 DRONE TEMPUR
+            if (droneTimer > 0) {
+                ctx.save();
+                ctx.translate(drone.x, drone.y);
+
+                // Glowing aura
+                ctx.fillStyle = '#00ffcc';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#00ffcc';
+
+                // Drone Central Body
+                ctx.beginPath();
+                ctx.arc(0, 0, drone.size * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Robotic Ring Wings
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, drone.size, drone.pulseAngle, drone.pulseAngle + Math.PI);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(0, 0, drone.size, drone.pulseAngle + Math.PI, drone.pulseAngle + Math.PI * 2);
+                ctx.stroke();
+
+                // Laser Sensor Eye
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(4, 0, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // Draw Player Paddle
+            if (player.smashArmed) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 187, 0, 0.4)';
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ffbb00';
+                ctx.fillRect(player.x - 6, player.y - 6, player.width + 12, player.height + 12);
+                ctx.restore();
+            }
+
+            ctx.save();
+            ctx.fillStyle = player.smashArmed ? '#ffbb00' : player.color;
+            ctx.shadowBlur = 18;
+            ctx.shadowColor = player.smashArmed ? '#ffbb00' : player.glow;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.restore();
+
+            // Draw Godlike AI Paddle (with Rage Auras & Titan Blade effects)
+            ctx.save();
+            const aiColor = aiRageLevel >= 4 ? '#ff0000' : (aiRageLevel >= 2 ? '#ff0055' : '#ff0077');
+            ctx.shadowBlur = 30 + aiRageLevel * 8;
+            ctx.shadowColor = ai.firewallActive ? '#ffffff' : aiColor;
+            ctx.fillStyle = ai.firewallActive ? '#ffffff' : aiColor;
+            ctx.fillRect(ai.x, ai.y, ai.width, ai.height);
+
+            // Rage Fire Arcs & Flames on AI Paddle
+            if (aiRageLevel >= 2) {
+                ctx.strokeStyle = '#ffff00';
+                ctx.lineWidth = 3;
+                for (let k = 0; k < 3; k++) {
+                    ctx.beginPath();
+                    ctx.moveTo(ai.x - 6, ai.y + Math.random() * ai.height);
+                    ctx.lineTo(ai.x + ai.width + 6, ai.y + Math.random() * ai.height);
+                    ctx.stroke();
+                }
+            }
+
+            // Boss Inner Core Neon Line
+            ctx.fillStyle = aiRageLevel >= 3 ? '#ffffff' : '#ffccdd';
+            ctx.fillRect(ai.x + 3, ai.y + 4, 3, ai.height - 8);
+
+            // Draw "RAGE TIER" tag above AI paddle
+            ctx.font = 'bold 0.65rem "Orbitron", sans-serif';
+            ctx.fillStyle = aiRageLevel >= 3 ? '#ff0000' : '#ff0055';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = ctx.fillStyle;
+            const statusLabel = aiRageLevel >= 4 ? "APOCALYPSE" : (aiRageLevel >= 2 ? "FURY BERSERK" : "APEX AI");
+            ctx.fillText(ai.firewallActive ? "FIREWALL" : statusLabel, ai.x + ai.width / 2, ai.y - 12);
+            ctx.restore();
+
+            // Draw AI Plasma Missiles
+            aiMissiles.forEach(m => {
+                ctx.save();
+                ctx.fillStyle = m.color;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = '#ff0033';
+                ctx.beginPath();
+                ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Spiky energy ring
+                ctx.strokeStyle = '#ffff00';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(m.x, m.y, m.radius * 1.4, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // Draw AI EMP Rings
+            aiEmpRings.forEach(emp => {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, emp.alpha);
+                ctx.strokeStyle = emp.color;
+                ctx.shadowBlur = 24;
+                ctx.shadowColor = '#ff00ff';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(emp.x, emp.y, emp.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // Draw Phantom Glitch Decoy Balls
+            phantomBalls.forEach(pb => {
+                ctx.save();
+                ctx.fillStyle = pb.color;
+                ctx.shadowBlur = 14;
+                ctx.shadowColor = '#ff00ff';
+                ctx.beginPath();
+                ctx.arc(pb.x, pb.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // Draw Balls
+            balls.forEach(b => b.draw(ctx));
+
+            // Draw Shockwaves
+            shockwaves.forEach(sw => sw.draw(ctx));
+
+            // Draw Particles
+            particles.forEach(p => p.draw(ctx));
+
+            // Draw Floating Texts
+            floatTexts.forEach(ft => ft.draw(ctx));
+
+            ctx.restore();
+        }
+
+        function gameLoop() {
+            updatePhysics();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const isMobile = window.innerWidth < 768;
+            const pHeight = isMobile ? canvas.height * 0.18 : canvas.height * 0.22;
+            const pWidth = isMobile ? 12 : 14;
+
+            player.width = pWidth;
+            player.height = pHeight;
+            ai.width = pWidth;
+            ai.baseHeight = pHeight;
+            ai.height = pHeight;
+
+            player.x = isMobile ? 16 : 35;
+            ai.x = canvas.width - ai.width - (isMobile ? 16 : 35);
+            ai.baseSpeed = isMobile ? canvas.height * 0.005 : canvas.height * 0.0062;
+            ai.speed = ai.baseSpeed;
+
+            if (gameState === 'START') {
+                player.y = canvas.height / 2 - player.height / 2;
+                player.targetY = player.y;
+                ai.y = player.y;
+                spawnMainBall();
+            }
+        }
+
+        startBtn.addEventListener('click', () => {
+            initAudio();
+            modalScreen.classList.add('hidden');
+            gameState = 'PLAYING';
+            player.score = 0;
+            ai.score = 0;
+            player.energy = 80;
+            aiRage = 0;
+            aiRageLevel = 0;
+            aiMissiles = [];
+            aiEmpRings = [];
+            phantomBalls = [];
+            if (bossRageFillEl) bossRageFillEl.style.width = '0%';
+            if (bossRageStageEl) bossRageStageEl.innerText = "😡 FRUSTRATION: 0% [CALM]";
+            playerScoreEl.innerText = "0";
+            aiScoreEl.innerText = "0";
+            updateEnergyUI();
+            spawnMainBall();
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

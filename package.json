@@ -1,0 +1,28 @@
+{
+  "name": "neon-pong-cyber-clash",
+  "version": "1.0.0",
+  "description": "Neon Pong: Cyber Clash - 1v1 Multiplayer Synthwave Cyberpunk Real-time Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node run_verification.js"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "cyberpunk",
+    "synthwave",
+    "socketio",
+    "html5-canvas",
+    "pong"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
