@@ -16,11 +16,11 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.socket.io', 'https://unpkg.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.socket.io', 'https://unpkg.com', 'https://cdn.jsdelivr.net'],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'", 'ws:', 'wss:', 'https://*.peerjs.com', 'wss://*.peerjs.com']
+        connectSrc: ["'self'", 'ws:', 'wss:', 'https://*.supabase.co', 'wss://*.supabase.co', 'https://*.peerjs.com', 'wss://*.peerjs.com']
       }
     },
     crossOriginEmbedderPolicy: false

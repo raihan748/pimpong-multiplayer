@@ -96,8 +96,9 @@
           </div>
         </div>
 
-        <div class="codex-trigger-wrap">
-          <button id="btn-open-codex" class="text-link">📖 CARA KONTROL & PANDUAN SUPER ABILITIES</button>
+        <div class="codex-trigger-wrap" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+          <button id="btn-open-codex" class="text-link">📖 CARA KONTROL & ABILITIES</button>
+          <button id="btn-open-leaderboard" class="text-link" style="color: #ffaa00;">🏆 GLOBAL HALL OF FAME</button>
         </div>
       </div>
     </div>
@@ -404,8 +405,28 @@
       </div>
     </div>
 
+    <!-- 6. MODAL: GLOBAL LEADERBOARD (SUPABASE) -->
+    <div id="modal-leaderboard" class="modal-backdrop hidden">
+      <div class="cyber-panel codex-panel">
+        <div class="modal-header">
+          <h3>🏆 CYBER CLASH: GLOBAL HALL OF FAME (SUPABASE)</h3>
+          <button id="btn-close-leaderboard" class="close-x">✕</button>
+        </div>
+        <div class="codex-content">
+          <div id="leaderboard-loading" style="text-align:center; padding: 25px; color: #00ffff; font-family: var(--font-cyber); letter-spacing: 2px;">
+            ⚡ MENYAMBUNGKAN KE DATABASE SUPABASE...
+          </div>
+          <div id="leaderboard-content" class="match-stats-table hidden">
+            <!-- Populated via Supabase -->
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
+  <!-- Supabase Client for Realtime Multiplayer & Database -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Socket.IO Client (CDN + Local Server Support) -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <!-- PeerJS Client (WebRTC P2P DataChannel for Serverless / Vercel Multiplayer) -->

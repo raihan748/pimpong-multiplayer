@@ -1214,4 +1214,30 @@ input[type="text"]:focus {
   .hud-top-bar { padding: 8px 10px; }
   .settings-toolbar { top: 6px; right: 10px; }
   .tool-btn { padding: 4px 8px; font-size: 0.65rem; }
+  .leaderboard-table-wrap { overflow-x: auto; width: 100%; }
+}
+
+/* Leaderboard Specific Styles */
+.leaderboard-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+}
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-cyber);
+  font-size: 0.85rem;
+  text-align: left;
+}
+.leaderboard-table th {
+  border-bottom: 2px solid var(--cyan-neon);
+  color: var(--cyan-neon);
+  padding: 10px 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.leaderboard-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }

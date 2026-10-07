@@ -630,12 +630,32 @@ class CyberPongPhysics {
 }
 
 // ============================================================================
-// 2. DUAL-MODE NETWORK ARCHITECTURE (SOCKET.IO + WEBRTC P2P VIA PEERJS)
+// 2. REAL-TIME CLOUD & MULTI-TRANSPORT ARCHITECTURE (SUPABASE REALTIME + SOCKET.IO + P2P)
 // ============================================================================
+const SUPABASE_URL = 'https://kugdqexmtahixrdudyqp.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_GuiOIWDZHeN_O3jNwyIG5w_yFWHR1gQ';
+let supabaseClient = null;
+if (typeof window !== 'undefined' && window.supabase) {
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: {
+        params: {
+          eventsPerSecond: 60
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[SUPABASE] Client init note:', err);
+  }
+}
+
 class DualNetworkManager {
   constructor() {
-    this.mode = 'detecting'; // 'socket' | 'p2p'
+    this.mode = 'detecting'; // 'supabase' | 'socket' | 'p2p'
     this.socket = null;
+    this.supabaseClient = supabaseClient;
+    this.supabaseChannel = null;
+    this.matchmakingChannel = null;
     this.peer = null;
     this.peerConn = null;
     this.role = null;
@@ -675,11 +695,14 @@ class DualNetworkManager {
     if (this.mode === 'socket') {
       return this.socket && this.socket.connected;
     }
+    if (this.mode === 'supabase') {
+      return this.supabaseChannel !== null || this.isSolo;
+    }
     return this.mode === 'p2p';
   }
 
   init() {
-    const isVercel = window.location.hostname.includes('vercel.app');
+    const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
 
     if (typeof io !== 'undefined' && !isVercel) {
       try {
@@ -697,8 +720,7 @@ class DualNetworkManager {
 
         this.socket.on('connect_error', () => {
           if (this.mode !== 'socket') {
-            this.mode = 'p2p';
-            updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+            this.setupCloudFallback();
           }
         });
 
@@ -718,85 +740,472 @@ class DualNetworkManager {
           });
         });
       } catch (err) {
-        this.mode = 'p2p';
-        updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+        this.setupCloudFallback();
       }
     } else {
-      this.mode = 'p2p';
-      updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+      this.setupCloudFallback();
     }
 
     setTimeout(() => {
       if (!this.socket || !this.socket.connected) {
-        this.mode = 'p2p';
-        updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+        this.setupCloudFallback();
       }
     }, 1500);
+  }
+
+  setupCloudFallback() {
+    if (this.supabaseClient) {
+      this.mode = 'supabase';
+      updateNetworkModeBadge('⚡ SUPABASE CLOUD ACTIVE', '#00ffcc');
+    } else {
+      this.mode = 'p2p';
+      updateNetworkModeBadge('🌐 P2P READY', '#00ffcc');
+    }
   }
 
   emit(event, payload) {
     if (this.mode === 'socket' && this.socket && this.socket.connected) {
       this.socket.emit(event, payload);
+    } else if (this.mode === 'supabase' && this.supabaseClient) {
+      this.handleSupabaseEmit(event, payload);
     } else {
       this.handleP2pEmit(event, payload);
     }
   }
 
-  handleP2pEmit(event, payload) {
+  handleSupabaseEmit(event, payload) {
     switch (event) {
       case 'room:create_solo':
         this.startSoloAi(payload);
         break;
 
       case 'room:create':
-        this.createP2pRoom(payload);
+        this.createSupabaseRoom(payload);
         break;
 
       case 'room:join':
-        this.joinP2pRoom(payload);
+        this.joinSupabaseRoom(payload);
         break;
 
       case 'player:ready':
-        this.handleP2pReady(payload.ready);
+        this.handleSupabaseReady(payload.ready);
         break;
 
       case 'room:add_bot':
-        this.addP2pBot();
+        this.addSupabaseBot();
         break;
 
       case 'player:input':
-        this.handleP2pInput(payload.yRatio);
+        this.handleSupabaseInput(payload.yRatio);
         break;
 
       case 'player:ability':
-        this.handleP2pAbility(payload.ability);
+        this.handleSupabaseAbility(payload.ability);
         break;
 
       case 'rematch:request':
-        this.handleP2pRematch();
+        this.handleSupabaseRematch();
         break;
 
       case 'room:leave':
-        this.leaveP2p();
+        this.leaveSupabaseRoom();
         break;
 
       case 'client:ping':
-        if (this.mode === 'p2p') {
-          if (this.role === 'guest' && this.peerConn && this.peerConn.open) {
-            this.peerConn.send({ type: 'ping', time: payload });
-          } else {
-            this.trigger('server:pong', payload);
-          }
-        }
+        this.handleSupabasePing(payload);
         break;
 
       case 'matchmaking:queue':
-        showToast('P2P MESH: MEMBUAT ROOM KHUSUS UNTUK LAWAN KAMU...');
-        this.createP2pRoom(payload);
+        this.queueSupabaseMatchmaking(payload);
         break;
 
       case 'matchmaking:cancel':
+        this.cancelSupabaseMatchmaking();
         break;
+    }
+  }
+
+  createSupabaseRoom(payload) {
+    this.isSolo = false;
+    this.role = 'host';
+    const words = ['NEON', 'CYBER', 'SYNTH', 'PULSE', 'GRID', 'BLADE', 'WARP'];
+    const prefix = words[Math.floor(Math.random() * words.length)];
+    const num = Math.floor(10 + Math.random() * 89);
+    const code = `${prefix}-${num}`;
+    this.roomCode = code;
+
+    this.physics = new CyberPongPhysics({ isSoloAi: false });
+    this.lobby = {
+      host: { name: payload.playerName, color: payload.color, ready: false },
+      guest: null,
+      spectatorsCount: 0
+    };
+    this.rematchVotes = { host: false, guest: false };
+
+    if (this.supabaseChannel) {
+      try { this.supabaseClient.removeChannel(this.supabaseChannel); } catch (e) {}
+      this.supabaseChannel = null;
+    }
+
+    const channel = this.supabaseClient.channel(`neonpong:${code}`, {
+      config: { broadcast: { self: false, ack: false } }
+    });
+    this.supabaseChannel = channel;
+
+    channel
+      .on('broadcast', { event: 'guest:hello' }, ({ payload: gData }) => {
+        if (!gData) return;
+        this.lobby.guest = {
+          name: gData.name,
+          color: gData.color,
+          ready: false
+        };
+        this.trigger('lobby:updated', this.lobby);
+        this.sendSupabaseBroadcast('room:joined', {
+          roomCode: this.roomCode,
+          role: 'guest',
+          lobby: this.lobby
+        });
+        this.sendSupabaseBroadcast('lobby:sync', { lobby: this.lobby });
+      })
+      .on('broadcast', { event: 'player:ready' }, ({ payload: rData }) => {
+        if (this.lobby && this.lobby.guest && rData) {
+          this.lobby.guest.ready = rData.ready;
+          this.trigger('lobby:updated', this.lobby);
+          this.sendSupabaseBroadcast('lobby:sync', { lobby: this.lobby });
+          if (this.lobby.host.ready && this.lobby.guest.ready) {
+            this.startCountdown();
+          }
+        }
+      })
+      .on('broadcast', { event: 'player:input' }, ({ payload: inData }) => {
+        if (this.physics && inData && typeof inData.yRatio === 'number') {
+          this.physics.setInput('guest', inData.yRatio);
+        }
+      })
+      .on('broadcast', { event: 'player:ability' }, ({ payload: abData }) => {
+        if (this.physics && abData && abData.ability) {
+          this.physics.activateAbility('guest', abData.ability);
+        }
+      })
+      .on('broadcast', { event: 'ping' }, ({ payload: pData }) => {
+        if (pData) {
+          this.sendSupabaseBroadcast('pong', { time: pData.time });
+        }
+      })
+      .on('broadcast', { event: 'rematch:vote' }, () => {
+        this.rematchVotes.guest = true;
+        this.trigger('rematch:vote', {});
+        if (this.rematchVotes.host && this.rematchVotes.guest) {
+          this.rematchVotes = { host: false, guest: false };
+          this.startCountdown();
+        }
+      })
+      .on('presence', { event: 'leave' }, () => {
+        if (this.lobby && this.lobby.guest) {
+          this.lobby.guest = null;
+          this.trigger('lobby:updated', this.lobby);
+          this.trigger('opponent:disconnected', { reconnectTime: 15 });
+          this.stopLoop();
+        }
+      });
+
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          channel.track({ role: 'host', name: payload.playerName, color: payload.color });
+        } catch (e) {}
+        this.trigger('room:joined', { roomCode: code, role: 'host', lobby: this.lobby });
+        showToast(`ROOM DIBUAT // BAGIKAN KODE: ${code}`);
+      }
+    });
+  }
+
+  joinSupabaseRoom(payload) {
+    this.isSolo = false;
+    this.role = 'guest';
+    const code = payload.roomCode.toUpperCase().trim();
+    this.roomCode = code;
+
+    if (this.supabaseChannel) {
+      try { this.supabaseClient.removeChannel(this.supabaseChannel); } catch (e) {}
+      this.supabaseChannel = null;
+    }
+
+    const channel = this.supabaseClient.channel(`neonpong:${code}`, {
+      config: { broadcast: { self: false, ack: false } }
+    });
+    this.supabaseChannel = channel;
+
+    channel
+      .on('broadcast', { event: 'room:joined' }, ({ payload: jData }) => {
+        if (jData) this.trigger('room:joined', jData);
+      })
+      .on('broadcast', { event: 'lobby:sync' }, ({ payload: lData }) => {
+        if (lData && lData.lobby) {
+          this.lobby = lData.lobby;
+          this.trigger('lobby:updated', lData.lobby);
+        }
+      })
+      .on('broadcast', { event: 'countdown:start' }, ({ payload: cData }) => {
+        if (cData) this.trigger('countdown:start', { countdown: cData.countdown });
+      })
+      .on('broadcast', { event: 'countdown:tick' }, ({ payload: cData }) => {
+        if (cData) this.trigger('countdown:tick', { countdown: cData.countdown });
+      })
+      .on('broadcast', { event: 'game:started' }, () => {
+        this.trigger('game:started', {});
+      })
+      .on('broadcast', { event: 'gameState' }, ({ payload: sData }) => {
+        if (sData && sData.snapshot) {
+          this.trigger('gameState', sData.snapshot);
+        }
+      })
+      .on('broadcast', { event: 'ability:activated' }, ({ payload: aData }) => {
+        if (aData) this.trigger('ability:activated', aData);
+      })
+      .on('broadcast', { event: 'pong' }, ({ payload: pData }) => {
+        if (pData && pData.time) {
+          this.trigger('server:pong', pData.time);
+        }
+      })
+      .on('broadcast', { event: 'match:ended' }, ({ payload: eData }) => {
+        if (eData && eData.data) {
+          this.trigger('match:ended', eData.data);
+        }
+      })
+      .on('broadcast', { event: 'rematch:vote' }, () => {
+        this.trigger('rematch:vote', {});
+      })
+      .on('presence', { event: 'leave' }, () => {
+        this.trigger('opponent:disconnected', { reconnectTime: 15 });
+      });
+
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          channel.track({ role: 'guest', name: payload.playerName, color: payload.color });
+        } catch (e) {}
+        const sendHello = () => {
+          this.sendSupabaseBroadcast('guest:hello', {
+            name: payload.playerName,
+            color: payload.color
+          });
+        };
+        sendHello();
+        setTimeout(sendHello, 400);
+        setTimeout(sendHello, 1000);
+      }
+    });
+  }
+
+  sendSupabaseBroadcast(event, payload) {
+    if (this.supabaseChannel) {
+      try {
+        this.supabaseChannel.send({
+          type: 'broadcast',
+          event,
+          payload
+        });
+      } catch (err) {
+        console.warn('Supabase broadcast send error:', err);
+      }
+    }
+  }
+
+  broadcastPayload(event, payload) {
+    if (this.mode === 'supabase' && this.supabaseChannel) {
+      this.sendSupabaseBroadcast(event, payload);
+    } else if (this.mode === 'p2p' && this.peerConn && this.peerConn.open) {
+      this.peerConn.send({ type: event, ...payload });
+    }
+  }
+
+  handleSupabaseReady(ready) {
+    if (this.role === 'host') {
+      this.lobby.host.ready = ready;
+      this.trigger('lobby:updated', this.lobby);
+      this.broadcastPayload('lobby:sync', { lobby: this.lobby });
+      if (this.lobby.host.ready && this.lobby.guest && this.lobby.guest.ready) {
+        this.startCountdown();
+      }
+    } else if (this.role === 'guest') {
+      this.broadcastPayload('player:ready', { ready });
+    }
+  }
+
+  addSupabaseBot() {
+    if (this.role !== 'host') return;
+    this.lobby.guest = {
+      name: 'CYBER DEITY BOT',
+      color: '#ff0055',
+      ready: true,
+      isBot: true
+    };
+    this.lobby.host.ready = true;
+    this.physics.isSoloAi = true;
+    this.trigger('lobby:updated', this.lobby);
+    this.broadcastPayload('lobby:sync', { lobby: this.lobby });
+    setTimeout(() => {
+      this.startCountdown();
+    }, 400);
+  }
+
+  handleSupabaseInput(yRatio) {
+    if (this.role === 'host') {
+      if (this.physics) this.physics.setInput('host', yRatio);
+    } else if (this.role === 'guest') {
+      this.broadcastPayload('player:input', { yRatio });
+    }
+  }
+
+  handleSupabaseAbility(ability) {
+    if (this.role === 'host') {
+      if (this.physics) this.physics.activateAbility('host', ability);
+    } else if (this.role === 'guest') {
+      this.broadcastPayload('player:ability', { ability });
+    }
+  }
+
+  handleSupabaseRematch() {
+    if (this.role === 'host') {
+      this.rematchVotes.host = true;
+      this.trigger('rematch:vote', {});
+      this.broadcastPayload('rematch:vote', {});
+      if (this.isSolo || (this.rematchVotes.host && this.rematchVotes.guest)) {
+        this.rematchVotes = { host: false, guest: false };
+        this.startCountdown();
+      }
+    } else if (this.role === 'guest') {
+      this.broadcastPayload('rematch:vote', {});
+    }
+  }
+
+  handleSupabasePing(time) {
+    if (this.role === 'guest') {
+      this.broadcastPayload('ping', { time });
+    } else {
+      this.trigger('server:pong', time);
+    }
+  }
+
+  leaveSupabaseRoom() {
+    this.stopLoop();
+    if (this.supabaseChannel) {
+      try {
+        this.supabaseClient.removeChannel(this.supabaseChannel);
+      } catch (e) {}
+      this.supabaseChannel = null;
+    }
+    this.role = null;
+    this.roomCode = null;
+    this.lobby = null;
+    this.physics = null;
+  }
+
+  queueSupabaseMatchmaking(payload) {
+    showToast('SUPABASE MESH: MENCARI PILOT DI CYBER CLUSTER...');
+    if (this.matchmakingChannel) {
+      try { this.supabaseClient.removeChannel(this.matchmakingChannel); } catch (e) {}
+    }
+    const mmChannel = this.supabaseClient.channel('neonpong:matchmaking-hub');
+    this.matchmakingChannel = mmChannel;
+
+    mmChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = mmChannel.presenceState();
+        const keys = Object.keys(state);
+        let foundOpponent = null;
+        for (const k of keys) {
+          const presences = state[k];
+          for (const p of presences) {
+            if (p.role === 'waiting' && p.roomCode && p.name !== payload.playerName) {
+              foundOpponent = p;
+              break;
+            }
+          }
+          if (foundOpponent) break;
+        }
+
+        if (foundOpponent && !this.roomCode) {
+          showToast(`LAWAN DITEMUKAN: ${foundOpponent.name}! MASUK KE ARENA...`);
+          try { this.supabaseClient.removeChannel(mmChannel); } catch (e) {}
+          this.matchmakingChannel = null;
+          if (typeof isQueueingMatch !== 'undefined') isQueueingMatch = false;
+          if (typeof quickMatchText !== 'undefined' && quickMatchText) quickMatchText.innerText = '⚡ QUICK MATCH (RANDOM)';
+          if (typeof btnQuickMatch !== 'undefined' && btnQuickMatch) btnQuickMatch.classList.remove('active-ready');
+          this.joinSupabaseRoom({
+            roomCode: foundOpponent.roomCode,
+            playerName: payload.playerName,
+            color: payload.color
+          });
+        }
+      });
+
+    mmChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        setTimeout(() => {
+          if (!this.roomCode && this.matchmakingChannel) {
+            this.createSupabaseRoom(payload);
+            mmChannel.track({
+              role: 'waiting',
+              name: payload.playerName,
+              color: payload.color,
+              roomCode: this.roomCode,
+              time: Date.now()
+            });
+            showToast(`MENUNGGU LAWAN DI ROOM ${this.roomCode}...`);
+          }
+        }, 800);
+      }
+    });
+  }
+
+  cancelSupabaseMatchmaking() {
+    if (this.matchmakingChannel) {
+      try { this.supabaseClient.removeChannel(this.matchmakingChannel); } catch (e) {}
+      this.matchmakingChannel = null;
+    }
+  }
+
+  recordMatchToSupabase(endData) {
+    if (!this.supabaseClient) return;
+    try {
+      const hostName = this.lobby?.host?.name || 'HOST_PILOT';
+      const guestName = this.lobby?.guest?.name || (this.isSolo ? 'CYBER DEITY BOT' : 'GUEST_PILOT');
+      const winner = endData.winner;
+      const hostScore = endData.score?.host || 0;
+      const guestScore = endData.score?.guest || 0;
+      const maxRally = endData.maxRally || 0;
+      const totalSmashes = (endData.stats?.host?.smashes || 0) + (endData.stats?.guest?.smashes || 0);
+      const totalParries = (endData.stats?.host?.parries || 0) + (endData.stats?.guest?.parries || 0);
+
+      this.supabaseClient
+        .from('match_history')
+        .insert({
+          winner,
+          host_name: hostName,
+          guest_name: guestName,
+          host_score: hostScore,
+          guest_score: guestScore,
+          max_rally: maxRally,
+          total_smashes: totalSmashes,
+          total_parries: totalParries,
+          room_code: this.roomCode || 'SOLO'
+        })
+        .then((res) => {
+          if (res && res.error) {
+            console.warn('[SUPABASE DB] Match record note:', res.error.message);
+          } else {
+            console.log('[SUPABASE DB] Match recorded successfully!');
+            showToast('🏆 HASIL PERTANDINGAN TERSIMPAN DI HALL OF FAME!');
+          }
+        })
+        .catch((err) => {
+          console.warn('[SUPABASE DB] Match history insert error:', err);
+        });
+    } catch (err) {
+      console.warn('[SUPABASE DB] Error recording match:', err);
     }
   }
 
@@ -1021,6 +1430,62 @@ class DualNetworkManager {
     }
   }
 
+  handleP2pEmit(event, payload) {
+    switch (event) {
+      case 'room:create_solo':
+        this.startSoloAi(payload);
+        break;
+
+      case 'room:create':
+        this.createP2pRoom(payload);
+        break;
+
+      case 'room:join':
+        this.joinP2pRoom(payload);
+        break;
+
+      case 'player:ready':
+        this.handleP2pReady(payload.ready);
+        break;
+
+      case 'room:add_bot':
+        this.addP2pBot();
+        break;
+
+      case 'player:input':
+        this.handleP2pInput(payload.yRatio);
+        break;
+
+      case 'player:ability':
+        this.handleP2pAbility(payload.ability);
+        break;
+
+      case 'rematch:request':
+        this.handleP2pRematch();
+        break;
+
+      case 'room:leave':
+        this.leaveP2p();
+        break;
+
+      case 'client:ping':
+        if (this.role === 'guest' && this.peerConn && this.peerConn.open) {
+          this.peerConn.send({ type: 'ping', time: payload });
+        } else {
+          this.trigger('server:pong', payload);
+        }
+        break;
+
+      case 'matchmaking:queue':
+        showToast('P2P MESH: MEMBUAT ROOM KHUSUS UNTUK LAWAN KAMU...');
+        this.createP2pRoom(payload);
+        break;
+
+      case 'matchmaking:cancel':
+        break;
+    }
+  }
+
   handleP2pReady(ready) {
     if (this.role === 'host') {
       this.lobby.host.ready = ready;
@@ -1095,17 +1560,13 @@ class DualNetworkManager {
   startCountdown() {
     let count = 3;
     this.trigger('countdown:start', { countdown: count });
-    if (this.peerConn && this.peerConn.open) {
-      this.peerConn.send({ type: 'countdown:start', countdown: count });
-    }
+    this.broadcastPayload('countdown:start', { countdown: count });
 
     if (this.countdownInterval) clearInterval(this.countdownInterval);
     this.countdownInterval = setInterval(() => {
       count--;
       this.trigger('countdown:tick', { countdown: count });
-      if (this.peerConn && this.peerConn.open) {
-        this.peerConn.send({ type: 'countdown:tick', countdown: count });
-      }
+      this.broadcastPayload('countdown:tick', { countdown: count });
 
       if (count <= 0) {
         clearInterval(this.countdownInterval);
@@ -1118,9 +1579,7 @@ class DualNetworkManager {
   startGameLoop() {
     this.physics.reset();
     this.trigger('game:started', {});
-    if (this.peerConn && this.peerConn.open) {
-      this.peerConn.send({ type: 'game:started' });
-    }
+    this.broadcastPayload('game:started', {});
 
     this.stopLoop();
     this.loopInterval = setInterval(() => {
@@ -1128,9 +1587,7 @@ class DualNetworkManager {
       const snapshot = this.physics.getSnapshot();
 
       this.trigger('gameState', snapshot);
-      if (this.peerConn && this.peerConn.open) {
-        this.peerConn.send({ type: 'gameState', snapshot });
-      }
+      this.broadcastPayload('gameState', { snapshot });
 
       if (this.physics.winner) {
         this.stopLoop();
@@ -1145,9 +1602,8 @@ class DualNetworkManager {
           stats: this.physics.stats
         };
         this.trigger('match:ended', endData);
-        if (this.peerConn && this.peerConn.open) {
-          this.peerConn.send({ type: 'match:ended', data: endData });
-        }
+        this.broadcastPayload('match:ended', { data: endData });
+        this.recordMatchToSupabase(endData);
       }
     }, 1000 / 60);
   }
@@ -1211,6 +1667,11 @@ const btnJoinRoom = document.getElementById('btn-join-room');
 const colorButtons = document.querySelectorAll('.color-btn');
 const btnOpenCodex = document.getElementById('btn-open-codex');
 const btnCloseCodex = document.getElementById('btn-close-codex');
+const btnOpenLeaderboard = document.getElementById('btn-open-leaderboard');
+const btnCloseLeaderboard = document.getElementById('btn-close-leaderboard');
+const modalLeaderboard = document.getElementById('modal-leaderboard');
+const leaderboardLoading = document.getElementById('leaderboard-loading');
+const leaderboardContent = document.getElementById('leaderboard-content');
 
 // Lobby Controls
 const lobbyRoomCode = document.getElementById('lobby-room-code');
@@ -1718,6 +2179,110 @@ btnCloseCodex.addEventListener('click', () => {
   modalCodex.classList.add('hidden');
   sfx.playSfx('click');
 });
+
+// Global Leaderboard (Supabase)
+if (btnOpenLeaderboard) {
+  btnOpenLeaderboard.addEventListener('click', () => {
+    if (modalLeaderboard) modalLeaderboard.classList.remove('hidden');
+    sfx.playSfx('click');
+    loadGlobalLeaderboard();
+  });
+}
+if (btnCloseLeaderboard) {
+  btnCloseLeaderboard.addEventListener('click', () => {
+    if (modalLeaderboard) modalLeaderboard.classList.add('hidden');
+    sfx.playSfx('click');
+  });
+}
+
+function escapeHtml(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m]));
+}
+
+async function loadGlobalLeaderboard() {
+  if (!leaderboardLoading || !leaderboardContent) return;
+  leaderboardLoading.classList.remove('hidden');
+  leaderboardContent.classList.add('hidden');
+  leaderboardContent.innerHTML = '';
+
+  if (!supabaseClient) {
+    leaderboardLoading.innerHTML = '<span style="color:#ff0055;">⚠️ SUPABASE CLIENT TIDAK TERSEDIA // CEK KONEKSI INTERNET</span>';
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('match_history')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (error) {
+      leaderboardLoading.innerHTML = `
+        <div style="color: #ffaa00; line-height: 1.6; text-align: left; padding: 12px; border: 1px solid rgba(255,170,0,0.3); border-radius: 6px; background: rgba(20,20,30,0.8);">
+          <p style="margin: 0 0 8px 0; font-weight: bold; color: #ff0055;">⚡ TABEL 'match_history' BELUM DIAKTIFKAN DI DATABASE</p>
+          <p style="font-size: 0.9em; color: #a0a0cc; margin: 0 0 8px 0;">Multiplayer 1v1 Room via Supabase Realtime tetap <strong>100% AKTIF</strong>! Untuk mengaktifkan rekap Hall of Fame otomatis:</p>
+          <ol style="font-size: 0.85em; margin: 0 0 0 20px; color: #00ffff; line-height: 1.6;">
+            <li>Buka Dashboard Supabase lu: <code>https://supabase.com/dashboard</code></li>
+            <li>Pilih Project -> <strong>SQL Editor</strong></li>
+            <li>Paste query dari file <code>supabase_schema.sql</code> di proyek ini, lalu klik <strong>Run</strong></li>
+          </ol>
+        </div>
+      `;
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      leaderboardLoading.innerHTML = '<span style="color:#00ffff;">⚡ BELUM ADA PERTANDINGAN TERCATAT // JADILAH CHAMPION PERTAMA!</span>';
+      return;
+    }
+
+    leaderboardLoading.classList.add('hidden');
+    leaderboardContent.classList.remove('hidden');
+
+    let html = `
+      <div class="leaderboard-table-wrap">
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>CHAMPION</th>
+            <th>MATCH</th>
+            <th style="text-align: center;">SKOR</th>
+            <th style="text-align: center;">MAX RALLY</th>
+            <th style="text-align: right;">DATE</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    data.forEach((m, idx) => {
+      const champ = m.winner === 'host' ? m.host_name : m.guest_name;
+      const champColor = m.winner === 'host' ? '#00ffff' : '#ff0077';
+      const dateStr = new Date(m.created_at).toLocaleDateString();
+      html += `
+        <tr style="background: ${idx % 2 === 0 ? 'rgba(0,0,0,0.3)' : 'transparent'};">
+          <td style="color: ${champColor}; font-weight: bold;">👑 ${escapeHtml(champ)}</td>
+          <td style="color: #fff;">${escapeHtml(m.host_name)} <span style="color: #666;">vs</span> ${escapeHtml(m.guest_name)}</td>
+          <td style="text-align: center; color: #ffff00; font-weight: bold;">${m.host_score} - ${m.guest_score}</td>
+          <td style="text-align: center; color: #00ffcc;">⚡ ${m.max_rally}</td>
+          <td style="text-align: right; color: #888; font-size: 0.75rem;">${dateStr}</td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table></div>';
+    leaderboardContent.innerHTML = html;
+  } catch (e) {
+    leaderboardLoading.innerHTML = `<span style="color:#ff0055;">⚠️ GAGAL MENGAMBIL DATA: ${e.message}</span>`;
+  }
+}
 
 // Copy Code Button
 btnCopyCode.addEventListener('click', () => {

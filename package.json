@@ -20,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "express": "^4.19.2",
     "helmet": "^8.3.0",
     "socket.io": "^4.7.5"
