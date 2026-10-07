@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "echo 'Ready for Vercel'",
     "test": "node run_verification.js"
   },
   "keywords": [

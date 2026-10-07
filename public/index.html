@@ -30,6 +30,7 @@
 
   <!-- Quick Settings Corner (Audio, CRT, Codex) -->
   <div class="settings-toolbar">
+    <div id="net-mode-pill" class="net-mode-pill" title="Network Connection Protocol">🌐 P2P READY</div>
     <button id="btn-toggle-bgm" class="tool-btn" title="Toggle Procedural Synthwave BGM">🎵 BGM: OFF</button>
     <button id="btn-toggle-sfx" class="tool-btn active" title="Toggle Procedural SFX">🔊 SFX: ON</button>
     <button id="btn-toggle-crt" class="tool-btn active" title="Toggle CRT Retro Filter">📺 CRT: ON</button>
@@ -405,8 +406,10 @@
 
   </div>
 
-  <!-- Socket.IO Client -->
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- Socket.IO Client (CDN + Local Server Support) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- PeerJS Client (WebRTC P2P DataChannel for Serverless / Vercel Multiplayer) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <!-- Main Game Client Script -->
   <script src="game.js"></script>
 </body>

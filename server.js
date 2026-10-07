@@ -16,11 +16,11 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.socket.io', 'https://unpkg.com'],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'", 'ws:', 'wss:']
+        connectSrc: ["'self'", 'ws:', 'wss:', 'https://*.peerjs.com', 'wss://*.peerjs.com']
       }
     },
     crossOriginEmbedderPolicy: false
@@ -1312,6 +1312,10 @@ function handlePlayerDisconnect(room, role) {
   }
 }
 
-server.listen(PORT, () => {
-  console.log(`[NEON PONG: CYBER CLASH] Hardened Engine running on port ${PORT}`);
-});
+module.exports = { app, server };
+
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`[NEON PONG: CYBER CLASH] Hardened Engine running on port ${PORT}`);
+  });
+}

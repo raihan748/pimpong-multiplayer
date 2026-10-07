@@ -1,16 +1,1186 @@
 // ============================================================================
-// NEON PONG: CYBER CLASH — ULTRA UPGRADED CLIENT ENGINE
+// NEON PONG: CYBER CLASH — ULTRA UPGRADED DUAL-ENGINE (WEBSOCKET + WEBRTC P2P)
 // ============================================================================
-
-const socket = io({
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000
-});
 
 // Virtual Arena Dimensions
 const ARENA_WIDTH = 1000;
 const ARENA_HEIGHT = 600;
+
+function updateNetworkModeBadge(text, color = '#00ffcc') {
+  const pill = document.getElementById('net-mode-pill');
+  if (pill) {
+    pill.innerText = text;
+    pill.style.color = color;
+    pill.style.borderColor = color;
+  }
+}
+
+// ============================================================================
+// 1. CLIENT AUTHORITATIVE PHYSICS ENGINE (FOR WEBRTC P2P & SOLO AI OFFLINE)
+// ============================================================================
+class CyberPongPhysics {
+  constructor(options = {}) {
+    this.isSoloAi = options.isSoloAi || false;
+    this.reset();
+  }
+
+  reset() {
+    this.balls = [
+      {
+        id: 'main',
+        x: ARENA_WIDTH / 2,
+        y: ARENA_HEIGHT / 2,
+        vx: (Math.random() < 0.5 ? 1 : -1) * 7.5,
+        vy: (Math.random() - 0.5) * 4,
+        radius: 10,
+        isSmash: false,
+        lastHitBy: null
+      }
+    ];
+    this.paddles = {
+      host: {
+        x: 35,
+        y: ARENA_HEIGHT / 2 - 55,
+        targetY: ARENA_HEIGHT / 2 - 55,
+        width: 14,
+        height: 110,
+        baseHeight: 110,
+        score: 0,
+        energy: 50,
+        maxEnergy: 100,
+        smashArmed: false,
+        malwareActive: false,
+        malwareTimer: 0,
+        shieldActive: false,
+        shieldTimer: 0,
+        shieldHits: 1,
+        droneActive: false,
+        droneTimer: 0,
+        droneX: 160,
+        droneY: ARENA_HEIGHT / 2,
+        droneSize: 16,
+        overclockTimer: 0
+      },
+      guest: {
+        x: ARENA_WIDTH - 35 - 14,
+        y: ARENA_HEIGHT / 2 - 55,
+        targetY: ARENA_HEIGHT / 2 - 55,
+        width: 14,
+        height: 110,
+        baseHeight: 110,
+        score: 0,
+        energy: 50,
+        maxEnergy: 100,
+        smashArmed: false,
+        malwareActive: false,
+        malwareTimer: 0,
+        shieldActive: false,
+        shieldTimer: 0,
+        shieldHits: 1,
+        droneActive: false,
+        droneTimer: 0,
+        droneX: ARENA_WIDTH - 160,
+        droneY: ARENA_HEIGHT / 2,
+        droneSize: 16,
+        overclockTimer: 0
+      }
+    };
+    this.vortex = {
+      active: false,
+      timer: 0,
+      x: ARENA_WIDTH / 2,
+      y: ARENA_HEIGHT / 2,
+      radius: 110,
+      angle: 0,
+      spawnedBy: null
+    };
+    this.powerUp = null;
+    this.powerUpSpawnCooldown = 600;
+    this.rallyCount = 0;
+    this.maxRally = 0;
+    this.events = [];
+    this.stats = {
+      host: { hits: 0, smashes: 0, parries: 0, energyUsed: 0, goals: 0 },
+      guest: { hits: 0, smashes: 0, parries: 0, energyUsed: 0, goals: 0 }
+    };
+    this.winner = null;
+  }
+
+  resetBall(targetRole = null) {
+    this.balls = [
+      {
+        id: 'main',
+        x: ARENA_WIDTH / 2,
+        y: ARENA_HEIGHT / 2,
+        radius: 10,
+        isSmash: false,
+        lastHitBy: null
+      }
+    ];
+    let dir = Math.random() < 0.5 ? 1 : -1;
+    if (targetRole === 'host') dir = -1;
+    if (targetRole === 'guest') dir = 1;
+
+    const baseSpeed = 7.5;
+    const angle = (Math.random() * Math.PI / 4) - (Math.PI / 8);
+    this.balls[0].vx = dir * baseSpeed * Math.cos(angle);
+    this.balls[0].vy = baseSpeed * Math.sin(angle);
+    this.balls[0].speed = baseSpeed;
+  }
+
+  trySpawnPowerUp() {
+    if (this.powerUp || this.powerUpSpawnCooldown > 0) return;
+    const types = ['recharge', 'triball', 'overclock'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    this.powerUp = {
+      x: ARENA_WIDTH * 0.35 + Math.random() * (ARENA_WIDTH * 0.3),
+      y: 80 + Math.random() * (ARENA_HEIGHT - 160),
+      type,
+      radius: 15,
+      timer: 15 * 60
+    };
+    this.powerUpSpawnCooldown = 18 * 60;
+  }
+
+  applyPowerUp(role, type) {
+    const paddle = this.paddles[role];
+    if (!paddle) return;
+    switch (type) {
+      case 'recharge':
+        paddle.energy = Math.min(paddle.maxEnergy, paddle.energy + 40);
+        this.events.push({ type: 'powerup_collect', role, powerUpType: 'recharge' });
+        break;
+      case 'triball':
+        if (this.balls.length > 0 && this.balls.length < 5) {
+          const lead = this.balls[0];
+          this.balls.push(
+            { ...lead, id: 'clone1', vy: lead.vy - 3 },
+            { ...lead, id: 'clone2', vy: lead.vy + 3 }
+          );
+        }
+        this.events.push({ type: 'powerup_collect', role, powerUpType: 'triball' });
+        break;
+      case 'overclock':
+        paddle.overclockTimer = 10 * 60;
+        this.events.push({ type: 'powerup_collect', role, powerUpType: 'overclock' });
+        break;
+    }
+  }
+
+  activateAbility(role, ability) {
+    const myPaddle = this.paddles[role];
+    const opponentRole = role === 'host' ? 'guest' : 'host';
+    const opponentPaddle = this.paddles[opponentRole];
+    const myStats = this.stats[role];
+    if (!myPaddle || !myStats) return;
+
+    switch (ability) {
+      case 'smash':
+        if (myPaddle.energy >= 30 && !myPaddle.smashArmed) {
+          myPaddle.energy -= 30;
+          myPaddle.smashArmed = true;
+          myStats.energyUsed += 30;
+          this.events.push({ type: 'ability_activated', role, ability: 'smash' });
+        }
+        break;
+      case 'drone':
+        if (myPaddle.energy >= 40 && !myPaddle.droneActive) {
+          myPaddle.energy -= 40;
+          myPaddle.droneActive = true;
+          myPaddle.droneTimer = 8 * 60;
+          myPaddle.droneY = myPaddle.y + myPaddle.height / 2;
+          myStats.energyUsed += 40;
+          this.events.push({ type: 'ability_activated', role, ability: 'drone' });
+        }
+        break;
+      case 'vortex':
+        if (myPaddle.energy >= 35 && !this.vortex.active) {
+          myPaddle.energy -= 35;
+          this.vortex.active = true;
+          this.vortex.timer = 6 * 60;
+          this.vortex.x = ARENA_WIDTH / 2;
+          this.vortex.y = ARENA_HEIGHT / 2;
+          this.vortex.spawnedBy = role;
+          myStats.energyUsed += 35;
+          this.events.push({ type: 'ability_activated', role, ability: 'vortex' });
+        }
+        break;
+      case 'malware':
+        if (myPaddle.energy >= 45 && !opponentPaddle.malwareActive) {
+          myPaddle.energy -= 45;
+          opponentPaddle.malwareActive = true;
+          opponentPaddle.malwareTimer = Math.floor(3.5 * 60);
+          myStats.energyUsed += 45;
+          this.events.push({ type: 'ability_activated', role, ability: 'malware', sourceRole: role, targetRole: opponentRole });
+        }
+        break;
+      case 'shield':
+        if (myPaddle.energy >= 35 && !myPaddle.shieldActive) {
+          myPaddle.energy -= 35;
+          myPaddle.shieldActive = true;
+          myPaddle.shieldTimer = 6 * 60;
+          myPaddle.shieldHits = 1;
+          myStats.energyUsed += 35;
+          this.events.push({ type: 'ability_activated', role, ability: 'shield' });
+        }
+        break;
+    }
+  }
+
+  setInput(role, yRatio) {
+    const paddle = this.paddles[role];
+    if (!paddle) return;
+    const clampedRatio = Math.max(0, Math.min(1, typeof yRatio === 'number' ? yRatio : 0.5));
+    let target = clampedRatio * (ARENA_HEIGHT - paddle.height);
+    if (paddle.malwareActive) {
+      target = (1.0 - clampedRatio) * (ARENA_HEIGHT - paddle.height);
+    }
+    paddle.targetY = Math.max(0, Math.min(ARENA_HEIGHT - paddle.height, target));
+  }
+
+  update() {
+    this.events = [];
+    const pHost = this.paddles.host;
+    const pGuest = this.paddles.guest;
+
+    const passiveRegen = 0.2 / 60;
+    pHost.energy = Math.min(pHost.maxEnergy, pHost.energy + passiveRegen);
+    pGuest.energy = Math.min(pGuest.maxEnergy, pGuest.energy + passiveRegen);
+
+    if (this.isSoloAi) {
+      this.updateAiBotLogic(pGuest);
+    }
+
+    const updatePaddlePos = (paddle) => {
+      let dy = paddle.targetY - paddle.y;
+      const maxSpeed = paddle.overclockTimer > 0 ? 65 : 48;
+      if (Math.abs(dy) <= maxSpeed) {
+        paddle.y = paddle.targetY;
+      } else {
+        paddle.y += Math.sign(dy) * maxSpeed;
+      }
+      if (paddle.y < 0) paddle.y = 0;
+      if (paddle.y + paddle.height > ARENA_HEIGHT) paddle.y = ARENA_HEIGHT - paddle.height;
+    };
+    updatePaddlePos(pHost);
+    updatePaddlePos(pGuest);
+
+    if (pHost.overclockTimer > 0) pHost.overclockTimer--;
+    if (pGuest.overclockTimer > 0) pGuest.overclockTimer--;
+
+    if (pHost.malwareTimer > 0) {
+      pHost.malwareTimer--;
+      pHost.height = pHost.baseHeight * 0.7;
+      if (pHost.malwareTimer <= 0) {
+        pHost.malwareActive = false;
+        pHost.height = pHost.baseHeight;
+      }
+    }
+    if (pGuest.malwareTimer > 0) {
+      pGuest.malwareTimer--;
+      pGuest.height = pGuest.baseHeight * 0.7;
+      if (pGuest.malwareTimer <= 0) {
+        pGuest.malwareActive = false;
+        pGuest.height = pGuest.baseHeight;
+      }
+    }
+
+    if (pHost.shieldTimer > 0) {
+      pHost.shieldTimer--;
+      if (pHost.shieldTimer <= 0) pHost.shieldActive = false;
+    }
+    if (pGuest.shieldTimer > 0) {
+      pGuest.shieldTimer--;
+      if (pGuest.shieldTimer <= 0) pGuest.shieldActive = false;
+    }
+
+    const updateDronePos = (paddle, role, defaultX, isTowards) => {
+      if (paddle.droneTimer > 0) {
+        paddle.droneTimer--;
+        let targetDroneY = ARENA_HEIGHT / 2;
+        let fastestBall = null;
+        let maxSpeed = 0;
+        for (const b of this.balls) {
+          if (isTowards(b) && Math.abs(b.vx) > maxSpeed) {
+            maxSpeed = Math.abs(b.vx);
+            fastestBall = b;
+          }
+        }
+        if (fastestBall) targetDroneY = fastestBall.y;
+        paddle.droneY += (targetDroneY - paddle.droneY) * 0.18;
+
+        for (const b of this.balls) {
+          const ddx = b.x - paddle.droneX;
+          const ddy = b.y - paddle.droneY;
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          if (dist <= paddle.droneSize + b.radius && isTowards(b)) {
+            b.vx = (role === 'host' ? 1 : -1) * (Math.abs(b.vx) * 1.25 + 1.5);
+            b.vy = (Math.random() - 0.5) * 8;
+            b.lastHitBy = role;
+            this.stats[role].hits++;
+            this.events.push({ type: 'drone_zap', x: paddle.droneX, y: paddle.droneY, role });
+          }
+        }
+        if (paddle.droneTimer <= 0) paddle.droneActive = false;
+      }
+    };
+    updateDronePos(pHost, 'host', 160, (b) => b.vx < 0);
+    updateDronePos(pGuest, 'guest', ARENA_WIDTH - 160, (b) => b.vx > 0);
+
+    if (this.vortex.active) {
+      this.vortex.timer--;
+      this.vortex.angle += 0.06;
+      this.vortex.y = ARENA_HEIGHT / 2 + Math.sin(this.vortex.angle) * 75;
+      for (const b of this.balls) {
+        const vdx = this.vortex.x - b.x;
+        const vdy = this.vortex.y - b.y;
+        const dist = Math.sqrt(vdx * vdx + vdy * vdy);
+        if (dist < 260 && dist > 15) {
+          const force = (1 - dist / 260) * 1.5;
+          b.vx += (vdx / dist) * force * 0.6;
+          b.vy += (vdy / dist) * force * 1.2;
+        }
+      }
+      if (this.vortex.timer <= 0) this.vortex.active = false;
+    }
+
+    if (this.powerUpSpawnCooldown > 0) this.powerUpSpawnCooldown--;
+    this.trySpawnPowerUp();
+    if (this.powerUp) {
+      this.powerUp.timer--;
+      for (const b of this.balls) {
+        const pdx = b.x - this.powerUp.x;
+        const pdy = b.y - this.powerUp.y;
+        const dist = Math.sqrt(pdx * pdx + pdy * pdy);
+        if (dist <= this.powerUp.radius + b.radius) {
+          const collectorRole = b.lastHitBy || (b.vx > 0 ? 'host' : 'guest');
+          this.applyPowerUp(collectorRole, this.powerUp.type);
+          this.powerUp = null;
+          break;
+        }
+      }
+      if (this.powerUp && this.powerUp.timer <= 0) this.powerUp = null;
+    }
+
+    for (let i = this.balls.length - 1; i >= 0; i--) {
+      const ball = this.balls[i];
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      if (ball.y - ball.radius <= 0) {
+        ball.y = ball.radius;
+        ball.vy = Math.abs(ball.vy);
+        this.events.push({ type: 'wall_hit', x: ball.x, y: 0 });
+      } else if (ball.y + ball.radius >= ARENA_HEIGHT) {
+        ball.y = ARENA_HEIGHT - ball.radius;
+        ball.vy = -Math.abs(ball.vy);
+        this.events.push({ type: 'wall_hit', x: ball.x, y: ARENA_HEIGHT });
+      }
+
+      if (pHost.shieldActive && ball.vx < 0 && ball.x - ball.radius <= 18) {
+        ball.vx = Math.abs(ball.vx) * 1.1 + 1;
+        ball.x = 22 + ball.radius;
+        pHost.shieldHits--;
+        if (pHost.shieldHits <= 0) {
+          pHost.shieldActive = false;
+          pHost.shieldTimer = 0;
+        }
+        this.events.push({ type: 'shield_block', x: 18, y: ball.y, role: 'host' });
+      }
+      if (pGuest.shieldActive && ball.vx > 0 && ball.x + ball.radius >= ARENA_WIDTH - 18) {
+        ball.vx = -Math.abs(ball.vx) * 1.1 - 1;
+        ball.x = ARENA_WIDTH - 22 - ball.radius;
+        pGuest.shieldHits--;
+        if (pGuest.shieldHits <= 0) {
+          pGuest.shieldActive = false;
+          pGuest.shieldTimer = 0;
+        }
+        this.events.push({ type: 'shield_block', x: ARENA_WIDTH - 18, y: ball.y, role: 'guest' });
+      }
+
+      // Host paddle collision
+      if (
+        ball.vx < 0 &&
+        ball.x - ball.radius <= pHost.x + pHost.width &&
+        ball.x + ball.radius >= pHost.x &&
+        ball.y + ball.radius >= pHost.y &&
+        ball.y - ball.radius <= pHost.y + pHost.height
+      ) {
+        const paddleCenter = pHost.y + pHost.height / 2;
+        const hitOffset = (ball.y - paddleCenter) / (pHost.height / 2);
+        const angle = hitOffset * (Math.PI / 3.4);
+
+        this.rallyCount++;
+        if (this.rallyCount > this.maxRally) this.maxRally = this.rallyCount;
+        this.stats.host.hits++;
+
+        const isSweetSpot = Math.abs(hitOffset) <= 0.28;
+        if (ball.isSmash && ball.lastHitBy === 'guest' && isSweetSpot) {
+          ball.isSmash = false;
+          const parrySpeed = 17;
+          ball.vx = Math.abs(Math.cos(angle) * parrySpeed);
+          ball.vy = Math.sin(angle) * parrySpeed;
+          pHost.energy = Math.min(pHost.maxEnergy, pHost.energy + 25);
+          this.stats.host.parries++;
+          this.events.push({ type: 'parry', x: pHost.x + pHost.width, y: ball.y, role: 'host' });
+        } else if (pHost.smashArmed) {
+          pHost.smashArmed = false;
+          ball.isSmash = true;
+          const curSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          const smashSpeed = Math.max(curSpeed * 1.8, 16.5);
+          ball.vx = Math.abs(Math.cos(angle) * smashSpeed);
+          ball.vy = Math.sin(angle) * smashSpeed;
+          pHost.energy = Math.min(pHost.maxEnergy, pHost.energy + 15);
+          this.stats.host.smashes++;
+          this.events.push({ type: 'smash', x: pHost.x + pHost.width, y: ball.y, role: 'host' });
+        } else {
+          ball.isSmash = false;
+          const curSpeed = Math.min(Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) + 0.35, 17);
+          ball.vx = Math.abs(Math.cos(angle) * curSpeed);
+          ball.vy = Math.sin(angle) * curSpeed;
+          pHost.energy = Math.min(pHost.maxEnergy, pHost.energy + 15);
+          this.events.push({ type: 'hit', x: pHost.x + pHost.width, y: ball.y, role: 'host' });
+        }
+        ball.x = pHost.x + pHost.width + ball.radius;
+        ball.lastHitBy = 'host';
+      }
+
+      // Guest paddle collision
+      if (
+        ball.vx > 0 &&
+        ball.x + ball.radius >= pGuest.x &&
+        ball.x - ball.radius <= pGuest.x + pGuest.width &&
+        ball.y + ball.radius >= pGuest.y &&
+        ball.y - ball.radius <= pGuest.y + pGuest.height
+      ) {
+        const paddleCenter = pGuest.y + pGuest.height / 2;
+        const hitOffset = (ball.y - paddleCenter) / (pGuest.height / 2);
+        const angle = hitOffset * (Math.PI / 3.4);
+
+        this.rallyCount++;
+        if (this.rallyCount > this.maxRally) this.maxRally = this.rallyCount;
+        this.stats.guest.hits++;
+
+        const isSweetSpot = Math.abs(hitOffset) <= 0.28;
+        if (ball.isSmash && ball.lastHitBy === 'host' && isSweetSpot) {
+          ball.isSmash = false;
+          const parrySpeed = 17;
+          ball.vx = -Math.abs(Math.cos(angle) * parrySpeed);
+          ball.vy = Math.sin(angle) * parrySpeed;
+          pGuest.energy = Math.min(pGuest.maxEnergy, pGuest.energy + 25);
+          this.stats.guest.parries++;
+          this.events.push({ type: 'parry', x: pGuest.x, y: ball.y, role: 'guest' });
+        } else if (pGuest.smashArmed) {
+          pGuest.smashArmed = false;
+          ball.isSmash = true;
+          const curSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          const smashSpeed = Math.max(curSpeed * 1.8, 16.5);
+          ball.vx = -Math.abs(Math.cos(angle) * smashSpeed);
+          ball.vy = Math.sin(angle) * smashSpeed;
+          pGuest.energy = Math.min(pGuest.maxEnergy, pGuest.energy + 15);
+          this.stats.guest.smashes++;
+          this.events.push({ type: 'smash', x: pGuest.x, y: ball.y, role: 'guest' });
+        } else {
+          ball.isSmash = false;
+          const curSpeed = Math.min(Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) + 0.35, 17);
+          ball.vx = -Math.abs(Math.cos(angle) * curSpeed);
+          ball.vy = Math.sin(angle) * curSpeed;
+          pGuest.energy = Math.min(pGuest.maxEnergy, pGuest.energy + 15);
+          this.events.push({ type: 'hit', x: pGuest.x, y: ball.y, role: 'guest' });
+        }
+        ball.x = pGuest.x - ball.radius;
+        ball.lastHitBy = 'guest';
+      }
+
+      // Goal: Left Wall (Guest scores)
+      if (ball.x + ball.radius < 0) {
+        this.balls.splice(i, 1);
+        if (this.balls.length === 0) {
+          pGuest.score++;
+          this.stats.guest.goals++;
+          pHost.energy = Math.min(pHost.maxEnergy, pHost.energy + 25);
+          this.rallyCount = 0;
+          this.events.push({
+            type: 'goal',
+            scorer: 'guest',
+            score: { host: pHost.score, guest: pGuest.score },
+            x: 0,
+            y: ball.y
+          });
+          if (pGuest.score >= 7) {
+            this.winner = 'guest';
+            return;
+          } else {
+            this.resetBall('host');
+          }
+        }
+      }
+      // Goal: Right Wall (Host scores)
+      else if (ball.x - ball.radius > ARENA_WIDTH) {
+        this.balls.splice(i, 1);
+        if (this.balls.length === 0) {
+          pHost.score++;
+          this.stats.host.goals++;
+          pGuest.energy = Math.min(pGuest.maxEnergy, pGuest.energy + 25);
+          this.rallyCount = 0;
+          this.events.push({
+            type: 'goal',
+            scorer: 'host',
+            score: { host: pHost.score, guest: pGuest.score },
+            x: ARENA_WIDTH,
+            y: ball.y
+          });
+          if (pHost.score >= 7) {
+            this.winner = 'host';
+            return;
+          } else {
+            this.resetBall('guest');
+          }
+        }
+      }
+    }
+  }
+
+  updateAiBotLogic(botPaddle) {
+    let targetY = ARENA_HEIGHT / 2 - botPaddle.height / 2;
+    let threatBall = null;
+    let maxVx = 0;
+    for (const b of this.balls) {
+      if (b.vx > 0 && b.vx > maxVx) {
+        maxVx = b.vx;
+        threatBall = b;
+      }
+    }
+    if (threatBall) {
+      targetY = threatBall.y - botPaddle.height / 2;
+      if (botPaddle.energy >= 40 && !botPaddle.droneActive && Math.random() < 0.02) {
+        botPaddle.energy -= 40;
+        botPaddle.droneActive = true;
+        botPaddle.droneTimer = 8 * 60;
+        this.events.push({ type: 'ability_activated', role: 'guest', ability: 'drone' });
+      } else if (threatBall.isSmash && botPaddle.energy >= 35 && !botPaddle.shieldActive) {
+        botPaddle.energy -= 35;
+        botPaddle.shieldActive = true;
+        botPaddle.shieldTimer = 6 * 60;
+        botPaddle.shieldHits = 1;
+        this.events.push({ type: 'ability_activated', role: 'guest', ability: 'shield' });
+      } else if (botPaddle.energy >= 30 && !botPaddle.smashArmed && Math.random() < 0.03) {
+        botPaddle.energy -= 30;
+        botPaddle.smashArmed = true;
+        this.events.push({ type: 'ability_activated', role: 'guest', ability: 'smash' });
+      }
+    }
+    botPaddle.targetY = targetY;
+  }
+
+  getSnapshot() {
+    return {
+      timestamp: Date.now(),
+      rallyCount: this.rallyCount,
+      balls: this.balls.map((b) => ({
+        x: b.x,
+        y: b.y,
+        vx: b.vx,
+        vy: b.vy,
+        isSmash: b.isSmash
+      })),
+      paddles: {
+        host: {
+          x: this.paddles.host.x,
+          y: this.paddles.host.y,
+          height: this.paddles.host.height,
+          score: this.paddles.host.score,
+          energy: this.paddles.host.energy,
+          smashArmed: this.paddles.host.smashArmed,
+          malwareActive: this.paddles.host.malwareActive,
+          malwareTimer: this.paddles.host.malwareTimer,
+          shieldActive: this.paddles.host.shieldActive,
+          droneActive: this.paddles.host.droneActive,
+          droneX: this.paddles.host.droneX,
+          droneY: this.paddles.host.droneY,
+          overclockActive: this.paddles.host.overclockTimer > 0
+        },
+        guest: {
+          x: this.paddles.guest.x,
+          y: this.paddles.guest.y,
+          height: this.paddles.guest.height,
+          score: this.paddles.guest.score,
+          energy: this.paddles.guest.energy,
+          smashArmed: this.paddles.guest.smashArmed,
+          malwareActive: this.paddles.guest.malwareActive,
+          malwareTimer: this.paddles.guest.malwareTimer,
+          shieldActive: this.paddles.guest.shieldActive,
+          droneActive: this.paddles.guest.droneActive,
+          droneX: this.paddles.guest.droneX,
+          droneY: this.paddles.guest.droneY,
+          overclockActive: this.paddles.guest.overclockTimer > 0
+        }
+      },
+      vortex: {
+        active: this.vortex.active,
+        x: this.vortex.x,
+        y: this.vortex.y,
+        radius: this.vortex.radius,
+        angle: this.vortex.angle
+      },
+      powerUp: this.powerUp,
+      events: this.events
+    };
+  }
+}
+
+// ============================================================================
+// 2. DUAL-MODE NETWORK ARCHITECTURE (SOCKET.IO + WEBRTC P2P VIA PEERJS)
+// ============================================================================
+class DualNetworkManager {
+  constructor() {
+    this.mode = 'detecting'; // 'socket' | 'p2p'
+    this.socket = null;
+    this.peer = null;
+    this.peerConn = null;
+    this.role = null;
+    this.roomCode = null;
+    this.lobby = null;
+    this.physics = null;
+    this.loopInterval = null;
+    this.countdownInterval = null;
+    this.isSolo = false;
+    this.rematchVotes = { host: false, guest: false };
+    this.listeners = new Map();
+
+    this.init();
+  }
+
+  on(event, handler) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(handler);
+  }
+
+  trigger(event, data) {
+    const list = this.listeners.get(event);
+    if (list) {
+      list.forEach((fn) => {
+        try {
+          fn(data);
+        } catch (e) {
+          console.error(`Error in event listener ${event}:`, e);
+        }
+      });
+    }
+  }
+
+  isConnected() {
+    if (this.mode === 'socket') {
+      return this.socket && this.socket.connected;
+    }
+    return this.mode === 'p2p';
+  }
+
+  init() {
+    const isVercel = window.location.hostname.includes('vercel.app');
+
+    if (typeof io !== 'undefined' && !isVercel) {
+      try {
+        this.socket = io({
+          reconnection: true,
+          reconnectionAttempts: 2,
+          reconnectionDelay: 1000,
+          timeout: 2000
+        });
+
+        this.socket.on('connect', () => {
+          this.mode = 'socket';
+          updateNetworkModeBadge('⚡ WEBSOCKET ACTIVE', '#00ffff');
+        });
+
+        this.socket.on('connect_error', () => {
+          if (this.mode !== 'socket') {
+            this.mode = 'p2p';
+            updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+          }
+        });
+
+        const forwardEvents = [
+          'server:pong', 'room:joined', 'room:error', 'room:closed',
+          'lobby:updated', 'countdown:start', 'countdown:tick', 'game:started',
+          'gameState', 'ability:activated', 'opponent:disconnected',
+          'opponent:disconnect_tick', 'opponent:reconnected', 'match:ended',
+          'rematch:vote', 'matchmaking:waiting'
+        ];
+
+        forwardEvents.forEach((ev) => {
+          this.socket.on(ev, (data) => {
+            if (this.mode === 'socket') {
+              this.trigger(ev, data);
+            }
+          });
+        });
+      } catch (err) {
+        this.mode = 'p2p';
+        updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+      }
+    } else {
+      this.mode = 'p2p';
+      updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+    }
+
+    setTimeout(() => {
+      if (!this.socket || !this.socket.connected) {
+        this.mode = 'p2p';
+        updateNetworkModeBadge('🌐 P2P READY (VERCEL)', '#00ffcc');
+      }
+    }, 1500);
+  }
+
+  emit(event, payload) {
+    if (this.mode === 'socket' && this.socket && this.socket.connected) {
+      this.socket.emit(event, payload);
+    } else {
+      this.handleP2pEmit(event, payload);
+    }
+  }
+
+  handleP2pEmit(event, payload) {
+    switch (event) {
+      case 'room:create_solo':
+        this.startSoloAi(payload);
+        break;
+
+      case 'room:create':
+        this.createP2pRoom(payload);
+        break;
+
+      case 'room:join':
+        this.joinP2pRoom(payload);
+        break;
+
+      case 'player:ready':
+        this.handleP2pReady(payload.ready);
+        break;
+
+      case 'room:add_bot':
+        this.addP2pBot();
+        break;
+
+      case 'player:input':
+        this.handleP2pInput(payload.yRatio);
+        break;
+
+      case 'player:ability':
+        this.handleP2pAbility(payload.ability);
+        break;
+
+      case 'rematch:request':
+        this.handleP2pRematch();
+        break;
+
+      case 'room:leave':
+        this.leaveP2p();
+        break;
+
+      case 'client:ping':
+        if (this.mode === 'p2p') {
+          if (this.role === 'guest' && this.peerConn && this.peerConn.open) {
+            this.peerConn.send({ type: 'ping', time: payload });
+          } else {
+            this.trigger('server:pong', payload);
+          }
+        }
+        break;
+
+      case 'matchmaking:queue':
+        showToast('P2P MESH: MEMBUAT ROOM KHUSUS UNTUK LAWAN KAMU...');
+        this.createP2pRoom(payload);
+        break;
+
+      case 'matchmaking:cancel':
+        break;
+    }
+  }
+
+  startSoloAi(payload) {
+    this.isSolo = true;
+    this.role = 'host';
+    this.roomCode = 'SOLO-AI';
+    this.physics = new CyberPongPhysics({ isSoloAi: true });
+    this.lobby = {
+      host: { name: payload.playerName, color: payload.color, ready: true },
+      guest: { name: 'CYBER DEITY BOT', color: '#ff0055', ready: true, isBot: true },
+      spectatorsCount: 0
+    };
+    this.trigger('room:joined', { roomCode: 'SOLO-AI', role: 'host', lobby: this.lobby });
+    setTimeout(() => {
+      this.startCountdown();
+    }, 400);
+  }
+
+  createP2pRoom(payload) {
+    this.isSolo = false;
+    this.role = 'host';
+    const words = ['NEON', 'CYBER', 'SYNTH', 'PULSE', 'GRID', 'BLADE', 'WARP'];
+    const prefix = words[Math.floor(Math.random() * words.length)];
+    const num = Math.floor(10 + Math.random() * 89);
+    const code = `${prefix}-${num}`;
+    this.roomCode = code;
+
+    this.physics = new CyberPongPhysics({ isSoloAi: false });
+    this.lobby = {
+      host: { name: payload.playerName, color: payload.color, ready: false },
+      guest: null,
+      spectatorsCount: 0
+    };
+    this.rematchVotes = { host: false, guest: false };
+
+    const peerId = `np-${code.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    if (typeof Peer !== 'undefined') {
+      try {
+        if (this.peer) this.peer.destroy();
+        this.peer = new Peer(peerId, {
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
+        });
+
+        this.peer.on('open', () => {
+          this.trigger('room:joined', { roomCode: code, role: 'host', lobby: this.lobby });
+        });
+
+        this.peer.on('connection', (conn) => {
+          this.peerConn = conn;
+          this.setupHostPeerEvents(conn);
+        });
+
+        this.peer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            this.createP2pRoom(payload);
+          } else {
+            console.warn('Host peer error:', err);
+          }
+        });
+      } catch (err) {
+        console.error('PeerJS create error:', err);
+      }
+    } else {
+      showToast('PEERJS BELUM SIAP // REFRESH HALAMAN');
+    }
+  }
+
+  setupHostPeerEvents(conn) {
+    conn.on('open', () => {
+      conn.send({ type: 'lobby:sync', lobby: this.lobby });
+    });
+
+    conn.on('data', (msg) => {
+      if (!msg || !msg.type) return;
+
+      switch (msg.type) {
+        case 'guest:hello':
+          this.lobby.guest = {
+            name: msg.name,
+            color: msg.color,
+            ready: false
+          };
+          this.trigger('lobby:updated', this.lobby);
+          conn.send({
+            type: 'room:joined',
+            roomCode: this.roomCode,
+            role: 'guest',
+            lobby: this.lobby
+          });
+          break;
+
+        case 'player:ready':
+          if (this.lobby.guest) {
+            this.lobby.guest.ready = msg.ready;
+            this.trigger('lobby:updated', this.lobby);
+            conn.send({ type: 'lobby:sync', lobby: this.lobby });
+            if (this.lobby.host.ready && this.lobby.guest.ready) {
+              this.startCountdown();
+            }
+          }
+          break;
+
+        case 'player:input':
+          if (this.physics) {
+            this.physics.setInput('guest', msg.yRatio);
+          }
+          break;
+
+        case 'player:ability':
+          if (this.physics) {
+            this.physics.activateAbility('guest', msg.ability);
+          }
+          break;
+
+        case 'ping':
+          conn.send({ type: 'pong', time: msg.time });
+          break;
+
+        case 'rematch:vote':
+          this.rematchVotes.guest = true;
+          this.trigger('rematch:vote', {});
+          if (this.rematchVotes.host && this.rematchVotes.guest) {
+            this.rematchVotes = { host: false, guest: false };
+            this.startCountdown();
+          }
+          break;
+      }
+    });
+
+    conn.on('close', () => {
+      this.lobby.guest = null;
+      this.trigger('lobby:updated', this.lobby);
+      this.trigger('opponent:disconnected', { reconnectTime: 15 });
+      this.stopLoop();
+    });
+  }
+
+  joinP2pRoom(payload) {
+    this.isSolo = false;
+    this.role = 'guest';
+    const code = payload.roomCode.toUpperCase().trim();
+    this.roomCode = code;
+    const hostPeerId = `np-${code.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+    if (typeof Peer !== 'undefined') {
+      try {
+        if (this.peer) this.peer.destroy();
+        this.peer = new Peer({
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
+        });
+
+        this.peer.on('open', () => {
+          this.peerConn = this.peer.connect(hostPeerId, { reliable: true });
+
+          this.peerConn.on('open', () => {
+            this.peerConn.send({
+              type: 'guest:hello',
+              name: payload.playerName,
+              color: payload.color
+            });
+          });
+
+          this.peerConn.on('data', (msg) => {
+            if (!msg || !msg.type) return;
+
+            switch (msg.type) {
+              case 'room:joined':
+                this.trigger('room:joined', msg);
+                break;
+              case 'lobby:sync':
+                this.trigger('lobby:updated', msg.lobby);
+                break;
+              case 'countdown:start':
+                this.trigger('countdown:start', { countdown: msg.countdown });
+                break;
+              case 'countdown:tick':
+                this.trigger('countdown:tick', { countdown: msg.countdown });
+                break;
+              case 'game:started':
+                this.trigger('game:started', {});
+                break;
+              case 'gameState':
+                this.trigger('gameState', msg.snapshot);
+                break;
+              case 'pong':
+                this.trigger('server:pong', msg.time);
+                break;
+              case 'match:ended':
+                this.trigger('match:ended', msg.data);
+                break;
+              case 'rematch:vote':
+                this.trigger('rematch:vote', {});
+                break;
+            }
+          });
+
+          this.peerConn.on('close', () => {
+            this.trigger('opponent:disconnected', { reconnectTime: 15 });
+          });
+        });
+
+        this.peer.on('error', (err) => {
+          console.warn('Guest peer error:', err);
+          this.trigger('room:error', { message: 'ROOM TIDAK DITEMUKAN // PASTIKAN HOST SUDAH BUAT ROOM' });
+        });
+      } catch (err) {
+        console.error('PeerJS join error:', err);
+      }
+    }
+  }
+
+  handleP2pReady(ready) {
+    if (this.role === 'host') {
+      this.lobby.host.ready = ready;
+      this.trigger('lobby:updated', this.lobby);
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'lobby:sync', lobby: this.lobby });
+      }
+      if (this.lobby.host.ready && this.lobby.guest && this.lobby.guest.ready) {
+        this.startCountdown();
+      }
+    } else if (this.role === 'guest') {
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'player:ready', ready });
+      }
+    }
+  }
+
+  addP2pBot() {
+    if (this.role !== 'host') return;
+    this.lobby.guest = {
+      name: 'CYBER DEITY BOT',
+      color: '#ff0055',
+      ready: true,
+      isBot: true
+    };
+    this.lobby.host.ready = true;
+    this.physics.isSoloAi = true;
+    this.trigger('lobby:updated', this.lobby);
+    setTimeout(() => {
+      this.startCountdown();
+    }, 400);
+  }
+
+  handleP2pInput(yRatio) {
+    if (this.role === 'host') {
+      if (this.physics) this.physics.setInput('host', yRatio);
+    } else if (this.role === 'guest') {
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'player:input', yRatio });
+      }
+    }
+  }
+
+  handleP2pAbility(ability) {
+    if (this.role === 'host') {
+      if (this.physics) this.physics.activateAbility('host', ability);
+    } else if (this.role === 'guest') {
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'player:ability', ability });
+      }
+    }
+  }
+
+  handleP2pRematch() {
+    if (this.role === 'host') {
+      this.rematchVotes.host = true;
+      this.trigger('rematch:vote', {});
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'rematch:vote' });
+      }
+      if (this.isSolo || (this.rematchVotes.host && this.rematchVotes.guest)) {
+        this.rematchVotes = { host: false, guest: false };
+        this.startCountdown();
+      }
+    } else if (this.role === 'guest') {
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'rematch:vote' });
+      }
+    }
+  }
+
+  startCountdown() {
+    let count = 3;
+    this.trigger('countdown:start', { countdown: count });
+    if (this.peerConn && this.peerConn.open) {
+      this.peerConn.send({ type: 'countdown:start', countdown: count });
+    }
+
+    if (this.countdownInterval) clearInterval(this.countdownInterval);
+    this.countdownInterval = setInterval(() => {
+      count--;
+      this.trigger('countdown:tick', { countdown: count });
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'countdown:tick', countdown: count });
+      }
+
+      if (count <= 0) {
+        clearInterval(this.countdownInterval);
+        this.countdownInterval = null;
+        this.startGameLoop();
+      }
+    }, 1000);
+  }
+
+  startGameLoop() {
+    this.physics.reset();
+    this.trigger('game:started', {});
+    if (this.peerConn && this.peerConn.open) {
+      this.peerConn.send({ type: 'game:started' });
+    }
+
+    this.stopLoop();
+    this.loopInterval = setInterval(() => {
+      this.physics.update();
+      const snapshot = this.physics.getSnapshot();
+
+      this.trigger('gameState', snapshot);
+      if (this.peerConn && this.peerConn.open) {
+        this.peerConn.send({ type: 'gameState', snapshot });
+      }
+
+      if (this.physics.winner) {
+        this.stopLoop();
+        const endData = {
+          winner: this.physics.winner,
+          isWalkout: false,
+          maxRally: this.physics.maxRally,
+          score: {
+            host: this.physics.paddles.host.score,
+            guest: this.physics.paddles.guest.score
+          },
+          stats: this.physics.stats
+        };
+        this.trigger('match:ended', endData);
+        if (this.peerConn && this.peerConn.open) {
+          this.peerConn.send({ type: 'match:ended', data: endData });
+        }
+      }
+    }, 1000 / 60);
+  }
+
+  stopLoop() {
+    if (this.loopInterval) {
+      clearInterval(this.loopInterval);
+      this.loopInterval = null;
+    }
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
+      this.countdownInterval = null;
+    }
+  }
+
+  leaveP2p() {
+    this.stopLoop();
+    if (this.peerConn) {
+      try { this.peerConn.close(); } catch (e) {}
+      this.peerConn = null;
+    }
+    if (this.peer) {
+      try { this.peer.destroy(); } catch (e) {}
+      this.peer = null;
+    }
+    this.role = null;
+    this.roomCode = null;
+    this.lobby = null;
+    this.physics = null;
+  }
+}
+
+const net = new DualNetworkManager();
 
 // DOM Elements
 const canvas = document.getElementById('gameCanvas');
@@ -576,17 +1746,17 @@ btnQuickMatch.addEventListener('click', () => {
     isQueueingMatch = true;
     quickMatchText.innerText = '🔍 SEARCHING OPPONENT... (CLICK TO CANCEL)';
     btnQuickMatch.classList.add('active-ready');
-    socket.emit('matchmaking:queue', { playerName: name, color: selectedColor });
+    net.emit('matchmaking:queue', { playerName: name, color: selectedColor });
   } else {
     isQueueingMatch = false;
     quickMatchText.innerText = '⚡ QUICK MATCH // FIND OPPONENT';
     btnQuickMatch.classList.remove('active-ready');
-    socket.emit('matchmaking:cancel');
+    net.emit('matchmaking:cancel');
     showToast('MATCHMAKING CANCELLED');
   }
 });
 
-socket.on('matchmaking:waiting', () => {
+net.on('matchmaking:waiting', () => {
   showToast('SCANNING CYBER GRID FOR OPPONENTS...');
 });
 
@@ -595,7 +1765,7 @@ btnSoloAi.addEventListener('click', () => {
   sfx.init();
   sfx.playSfx('click');
   const name = inputPlayerName.value.trim() || 'HUMAN_PILOT';
-  socket.emit('room:create_solo', { playerName: name, color: selectedColor });
+  net.emit('room:create_solo', { playerName: name, color: selectedColor });
 });
 
 // 3. Create Custom Room
@@ -603,7 +1773,7 @@ btnCreateRoom.addEventListener('click', () => {
   sfx.init();
   sfx.playSfx('click');
   const name = inputPlayerName.value.trim() || 'HOST_ONE';
-  socket.emit('room:create', { playerName: name, color: selectedColor });
+  net.emit('room:create', { playerName: name, color: selectedColor });
 });
 
 // 4. Join Custom Room
@@ -617,7 +1787,7 @@ btnJoinRoom.addEventListener('click', () => {
   }
   const name = inputPlayerName.value.trim() || 'GUEST_TWO';
   const token = sessionStorage.getItem(`token_${code}`);
-  socket.emit('room:join', { roomCode: code, playerName: name, color: selectedColor, reconnectToken: token });
+  net.emit('room:join', { roomCode: code, playerName: name, color: selectedColor, reconnectToken: token });
 });
 
 // 5. Ready Toggle
@@ -626,13 +1796,13 @@ btnReadyToggle.addEventListener('click', () => {
   isReady = !isReady;
   btnReadyToggle.classList.toggle('active-ready', isReady);
   btnReadyToggle.querySelector('.btn-text').innerText = isReady ? 'WAITING FOR CLASH' : 'READY FOR CLASH';
-  socket.emit('player:ready', { ready: isReady });
+  net.emit('player:ready', { ready: isReady });
 });
 
 if (btnAddBot) {
   btnAddBot.addEventListener('click', () => {
     sfx.playSfx('click');
-    socket.emit('room:add_bot');
+    net.emit('room:add_bot');
   });
 }
 
@@ -642,14 +1812,14 @@ btnLeaveMatch.addEventListener('click', leaveRoomAndReset);
 
 function leaveRoomAndReset() {
   sfx.playSfx('click');
-  socket.emit('room:leave');
+  net.emit('room:leave');
   resetClientState();
   switchScreen('screen-menu');
 }
 
 btnRematch.addEventListener('click', () => {
   sfx.playSfx('click');
-  socket.emit('rematch:request');
+  net.emit('rematch:request');
   btnRematch.disabled = true;
   rematchBtnText.innerText = 'REMATCH REQUESTED...';
 });
@@ -702,7 +1872,7 @@ function emitPaddleRatio(ratio) {
   if ((Math.abs(ratio - lastSentInputRatio) > 0.002 && (now - lastSentInputTime >= 15)) || (now - lastSentInputTime >= 120)) {
     lastSentInputTime = now;
     lastSentInputRatio = ratio;
-    socket.emit('player:input', { yRatio: ratio });
+    net.emit('player:input', { yRatio: ratio });
   }
 }
 
@@ -768,26 +1938,26 @@ abilityButtons.forEach((btn) => {
 
 function triggerAbility(abilityName) {
   if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
-  socket.emit('player:ability', { ability: abilityName });
+  net.emit('player:ability', { ability: abilityName });
 }
 
 // ============================================================================
-// 7. SOCKET.IO MULTIPLAYER EVENT HANDLERS
+// 7. REAL-TIME EVENT HANDLERS (DUAL SOCKET.IO & WEBRTC P2P)
 // ============================================================================
 // Latency Tracker
 setInterval(() => {
-  if (socket.connected) {
-    socket.emit('client:ping', Date.now());
+  if (net.isConnected()) {
+    net.emit('client:ping', Date.now());
   }
 }, 1000);
 
-socket.on('server:pong', (startTs) => {
+net.on('server:pong', (startTs) => {
   const latency = Date.now() - startTs;
   pingIndicator.innerText = `PING: ${latency} ms`;
 });
 
 // Room Joined
-socket.on('room:joined', ({ roomCode, role, sessionToken, lobby }) => {
+net.on('room:joined', ({ roomCode, role, sessionToken, lobby }) => {
   myRoomCode = roomCode;
   myRole = role;
   isQueueingMatch = false;
@@ -810,15 +1980,15 @@ socket.on('room:joined', ({ roomCode, role, sessionToken, lobby }) => {
   }
 });
 
-socket.on('room:error', ({ message }) => showToast(message));
+net.on('room:error', ({ message }) => showToast(message));
 
-socket.on('room:closed', ({ reason }) => {
+net.on('room:closed', ({ reason }) => {
   showToast(reason);
   resetClientState();
   switchScreen('screen-menu');
 });
 
-socket.on('lobby:updated', (lobby) => updateLobbyUI(lobby));
+net.on('lobby:updated', (lobby) => updateLobbyUI(lobby));
 
 function updateLobbyUI(lobby) {
   if (!lobby) return;
@@ -857,7 +2027,7 @@ function updateLobbyUI(lobby) {
 }
 
 // Countdown Sequence
-socket.on('countdown:start', ({ countdown }) => {
+net.on('countdown:start', ({ countdown }) => {
   localPaddleY = ARENA_HEIGHT / 2 - 55;
   currentYRatio = 0.5;
   lastSentInputRatio = -1;
@@ -867,7 +2037,7 @@ socket.on('countdown:start', ({ countdown }) => {
   sfx.playSfx('countdown_tick');
 });
 
-socket.on('countdown:tick', ({ countdown }) => {
+net.on('countdown:tick', ({ countdown }) => {
   countdownNumber.innerText = countdown;
   if (countdown > 0) {
     sfx.playSfx('countdown_tick');
@@ -878,14 +2048,14 @@ socket.on('countdown:tick', ({ countdown }) => {
   }
 });
 
-socket.on('game:started', () => {
+net.on('game:started', () => {
   countdownOverlay.classList.add('hidden');
   disconnectOverlay.classList.add('hidden');
   if (currentScreen !== 'screen-hud') switchScreen('screen-hud');
 });
 
 // Authoritative Physics Snapshot
-socket.on('gameState', (snapshot) => {
+net.on('gameState', (snapshot) => {
   latestSnapshot = snapshot;
 
   // Process Events
@@ -990,7 +2160,7 @@ function handleServerEvent(ev) {
   }
 }
 
-socket.on('ability:activated', (data) => {
+net.on('ability:activated', (data) => {
   if (data.ability === 'malware') {
     sfx.playSfx('malware');
     screenShake = 16;
@@ -1005,22 +2175,22 @@ socket.on('ability:activated', (data) => {
 });
 
 // Disconnection
-socket.on('opponent:disconnected', ({ reconnectTime }) => {
+net.on('opponent:disconnected', ({ reconnectTime }) => {
   disconnectOverlay.classList.remove('hidden');
   disconnectTimerDisplay.innerText = `${reconnectTime}s`;
 });
 
-socket.on('opponent:disconnect_tick', ({ reconnectTime }) => {
+net.on('opponent:disconnect_tick', ({ reconnectTime }) => {
   disconnectTimerDisplay.innerText = `${reconnectTime}s`;
 });
 
-socket.on('opponent:reconnected', () => {
+net.on('opponent:reconnected', () => {
   disconnectOverlay.classList.add('hidden');
   showToast('OPPONENT RECONNECTED // RESUMING BATTLE');
 });
 
 // Match End
-socket.on('match:ended', ({ winner, isWalkout, maxRally, score, stats }) => {
+net.on('match:ended', ({ winner, isWalkout, maxRally, score, stats }) => {
   switchScreen('screen-match-end');
   const isMeWinner = winner === myRole;
 
@@ -1051,7 +2221,7 @@ socket.on('match:ended', ({ winner, isWalkout, maxRally, score, stats }) => {
   rematchBtnText.innerText = 'REMATCH (0/2)';
 });
 
-socket.on('rematch:vote', () => {
+net.on('rematch:vote', () => {
   rematchBtnText.innerText = 'REMATCH (1/2)';
 });
 
