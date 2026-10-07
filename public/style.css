@@ -158,6 +158,42 @@ html, body {
   pointer-events: auto;
 }
 
+#screen-hud.screen-view.active {
+  pointer-events: none !important;
+}
+
+#screen-hud .hud-top-bar,
+#screen-hud .hud-bottom-bar {
+  pointer-events: auto;
+}
+
+.control-hint-pill {
+  background: rgba(10, 18, 35, 0.85);
+  border: 1px solid rgba(0, 255, 255, 0.35);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-family: var(--font-tech);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  color: #a8d5e5;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.15);
+  backdrop-filter: blur(6px);
+  text-align: center;
+  pointer-events: none;
+  margin-bottom: 2px;
+}
+
+.control-hint-pill strong {
+  color: #00ffff;
+}
+
+.highlight-btn {
+  background: linear-gradient(135deg, #00ffcc, #0088ff) !important;
+  color: #03030c !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 25px rgba(0, 255, 204, 0.6) !important;
+}
+
 /* Cyber Panel Box */
 .cyber-panel {
   background: var(--bg-dark-trans);

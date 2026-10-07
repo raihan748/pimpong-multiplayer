@@ -253,12 +253,15 @@ function updateRoomPhysics(room) {
     updateAiBotLogic(room, pGuest, phys, events);
   }
 
-  // Smooth Paddle Displacement with Anti-Cheat Velocity Clamping
+  // Responsive Paddle Displacement with Velocity Thresholding
   const updatePaddle = (paddle) => {
     let dy = paddle.targetY - paddle.y;
-    const maxSpeed = paddle.overclockTimer > 0 ? MAX_PADDLE_SPEED * 1.4 : MAX_PADDLE_SPEED;
-    dy = Math.max(-maxSpeed, Math.min(maxSpeed, dy * 0.5));
-    paddle.y += dy;
+    const maxSpeed = paddle.overclockTimer > 0 ? 65 : 48;
+    if (Math.abs(dy) <= maxSpeed) {
+      paddle.y = paddle.targetY;
+    } else {
+      paddle.y += Math.sign(dy) * maxSpeed;
+    }
     if (paddle.y < 0) paddle.y = 0;
     if (paddle.y + paddle.height > ARENA_HEIGHT) paddle.y = ARENA_HEIGHT - paddle.height;
   };
@@ -1072,6 +1075,31 @@ io.on('connection', (socket) => {
     if (room.host && room.guest && room.host.ready && room.guest.ready) {
       startCountdown(room);
     }
+  });
+
+  // Host Adds AI Bot into Lobby
+  socket.on('room:add_bot', () => {
+    if (!currentRoomId || playerRole !== 'host' || !checkRateLimit(socket.id)) return;
+    const room = rooms.get(currentRoomId);
+    if (!room || room.state !== 'LOBBY' || room.guest) return;
+
+    room.isSoloAi = true;
+    if (room.host) room.host.ready = true;
+    room.guest = {
+      id: 'bot_guest',
+      sessionToken: 'bot_token',
+      name: 'CYBER DEITY BOT',
+      color: '#ff0055',
+      ready: true,
+      connected: true,
+      isBot: true,
+      stats: { hits: 0, smashes: 0, parries: 0, energyUsed: 0, goals: 0 }
+    };
+
+    io.to(currentRoomId).emit('lobby:updated', getLobbyPayload(room));
+    setTimeout(() => {
+      startCountdown(room);
+    }, 500);
   });
 
   // 6. Paddle Movement Input

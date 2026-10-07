@@ -66,29 +66,29 @@
 
         <!-- Mode Selection Action Stack -->
         <div class="action-buttons">
-          <!-- 1. Quick Matchmaking Queue -->
-          <button id="btn-quick-match" class="cyber-btn quick-match-btn">
-            <span class="btn-glow"></span>
-            <span id="quick-match-text" class="btn-text">⚡ QUICK MATCH // FIND OPPONENT</span>
+          <!-- 1. Solo vs AI Deity (Instant Play) -->
+          <button id="btn-solo-ai" class="cyber-btn solo-btn highlight-btn">
+            <span class="btn-text">🤖 MAIN SOLO VS AI [CYBER DEITY BOT] — LANGSUNG MAIN</span>
           </button>
 
-          <!-- 2. Solo vs AI Deity -->
-          <button id="btn-solo-ai" class="cyber-btn solo-btn">
-            <span class="btn-text">🤖 SOLO VS AI [CYBER DEITY BOT]</span>
+          <!-- 2. Quick Matchmaking Queue -->
+          <button id="btn-quick-match" class="cyber-btn quick-match-btn">
+            <span class="btn-glow"></span>
+            <span id="quick-match-text" class="btn-text">⚡ QUICK MATCH // CARI LAWAN ONLINE</span>
           </button>
 
           <div class="or-separator">
             <span class="line"></span>
-            <span class="or-text">OR CUSTOM ROOM</span>
+            <span class="or-text">ATAU BUAT / MASUK ROOM KHUSUS</span>
             <span class="line"></span>
           </div>
 
           <button id="btn-create-room" class="cyber-btn primary-btn">
-            <span class="btn-text">🔒 CREATE PRIVATE ROOM</span>
+            <span class="btn-text">🔒 CREATE PRIVATE ROOM (KODE)</span>
           </button>
 
           <div class="join-box">
-            <input type="text" id="join-room-code" placeholder="ENTER ROOM CODE (EX: NEON-7X)" maxlength="12" autocomplete="off" spellcheck="false">
+            <input type="text" id="join-room-code" placeholder="MASUKKAN KODE ROOM (EX: NEON-7X)" maxlength="12" autocomplete="off" spellcheck="false">
             <button id="btn-join-room" class="cyber-btn secondary-btn">
               <span class="btn-text">JOIN</span>
             </button>
@@ -96,7 +96,7 @@
         </div>
 
         <div class="codex-trigger-wrap">
-          <button id="btn-open-codex" class="text-link">📖 SUPER ABILITIES & PARRY CLASH GUIDE</button>
+          <button id="btn-open-codex" class="text-link">📖 CARA KONTROL & PANDUAN SUPER ABILITIES</button>
         </div>
       </div>
     </div>
@@ -142,6 +142,9 @@
         <div class="lobby-actions">
           <button id="btn-ready-toggle" class="cyber-btn ready-btn" disabled>
             <span class="btn-text">READY FOR CLASH</span>
+          </button>
+          <button id="btn-add-bot" class="cyber-btn solo-btn">
+            <span class="btn-text">🤖 MULAI LAWAN BOT AI</span>
           </button>
           <button id="btn-leave-lobby" class="cyber-btn exit-btn">
             <span class="btn-text">LEAVE ROOM</span>
@@ -194,6 +197,11 @@
 
       <!-- HUD Bottom: Energy Bar & Ability Action Deck -->
       <div class="hud-bottom-bar">
+        <!-- Control Hint Banner -->
+        <div class="control-hint-pill">
+          <span>🎮 KONTROL: Gerakkan <strong>MOUSE</strong> &nbsp;|&nbsp; Tahan <strong>W / S</strong> / <strong>Panah</strong> &nbsp;|&nbsp; <strong>Sentuh Drag</strong> Layar</span>
+        </div>
+
         <div class="energy-module">
           <div class="energy-header">
             <span>⚡ CORE GENERATOR</span>
@@ -232,7 +240,7 @@
             <div class="skill-icon">🌀</div>
             <div class="skill-meta">
               <span class="skill-name">VORTEX HOLE</span>
-              <span class="skill-shortcut">[W] / [3]</span>
+              <span class="skill-shortcut">[3] / [F]</span>
             </div>
             <div class="skill-cost">35 ⚡</div>
             <div class="skill-cooldown-overlay"></div>
@@ -328,10 +336,21 @@
     <div id="modal-codex" class="modal-backdrop hidden">
       <div class="cyber-panel codex-panel">
         <div class="modal-header">
-          <h3>CYBER CODEX: ABILITIES, POWER-UPS & COUNTER-PLAY</h3>
+          <h3>🎮 KONTROL & PANDUAN CYBER ABILITIES</h3>
           <button id="btn-close-codex" class="close-x">✕</button>
         </div>
         <div class="codex-content">
+          <!-- Control Scheme Card -->
+          <div class="codex-item" style="border-left: 3px solid #00ffff; background: rgba(0, 255, 255, 0.05);">
+            <div class="codex-icon">🎮</div>
+            <div class="codex-desc">
+              <h4>CARA MENGGERAKKAN PADDLE (0ms INSTANT RESPONSE)</h4>
+              <p>• <strong>🖱️ Mouse:</strong> Gerakkan kursor ke atas / bawah di layar (paling presisi & responsif).<br>
+                 • <strong>⌨️ Keyboard:</strong> Tahan tombol <strong>W</strong> (naik) dan <strong>S</strong> (turun), atau panah <strong>▲ / ▼</strong>.<br>
+                 • <strong>📱 Sentuh / Mobile:</strong> Seret jari ke atas / bawah di layar.</p>
+            </div>
+          </div>
+
           <div class="codex-item">
             <div class="codex-icon">🔥</div>
             <div class="codex-desc">
@@ -352,7 +371,7 @@
           <div class="codex-item">
             <div class="codex-icon">🌀</div>
             <div class="codex-desc">
-              <h4>SINGULARITY VORTEX (35 ⚡ | Durasi 6s | W / 3)</h4>
+              <h4>SINGULARITY VORTEX (35 ⚡ | Durasi 6s | 3 / F)</h4>
               <p>Membuka wormhole gravitasi di tengah arena yang membelokkan kurva lintasan bola secara dinamis.</p>
             </div>
           </div>

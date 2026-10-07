@@ -49,10 +49,10 @@ const spectatorsBadge = document.getElementById('spectators-badge');
 const hostNameEl = document.getElementById('host-name');
 const guestNameEl = document.getElementById('guest-name');
 const hostPreviewPaddle = document.getElementById('host-preview-paddle');
-const guestPreviewPaddle = document.getElementById('guest-preview-paddle');
 const hostReadyTag = document.getElementById('host-ready-tag');
 const guestReadyTag = document.getElementById('guest-ready-tag');
 const btnReadyToggle = document.getElementById('btn-ready-toggle');
+const btnAddBot = document.getElementById('btn-add-bot');
 const btnLeaveLobby = document.getElementById('btn-leave-lobby');
 
 // HUD Elements
@@ -629,6 +629,13 @@ btnReadyToggle.addEventListener('click', () => {
   socket.emit('player:ready', { ready: isReady });
 });
 
+if (btnAddBot) {
+  btnAddBot.addEventListener('click', () => {
+    sfx.playSfx('click');
+    socket.emit('room:add_bot');
+  });
+}
+
 // 6. Leave Room / Match
 btnLeaveLobby.addEventListener('click', leaveRoomAndReset);
 btnLeaveMatch.addEventListener('click', leaveRoomAndReset);
@@ -653,11 +660,16 @@ function resetClientState() {
   isReady = false;
   isQueueingMatch = false;
   latestSnapshot = null;
+  localPaddleY = ARENA_HEIGHT / 2 - 55;
+  currentYRatio = 0.5;
+  lastSentInputRatio = -1;
+  for (const k in activeKeys) activeKeys[k] = false;
   quickMatchText.innerText = '⚡ QUICK MATCH // FIND OPPONENT';
   btnQuickMatch.classList.remove('active-ready');
   btnReadyToggle.disabled = true;
   btnReadyToggle.classList.remove('active-ready');
   btnReadyToggle.querySelector('.btn-text').innerText = 'READY FOR CLASH';
+  if (btnAddBot) btnAddBot.classList.remove('hidden');
   btnRematch.disabled = false;
   rematchBtnText.innerText = 'REMATCH (0/2)';
   spectatorHudBadge.classList.add('hidden');
@@ -667,42 +679,85 @@ function resetClientState() {
 }
 
 // ============================================================================
-// 6. INPUT HANDLING (PADDLE & ABILITIES)
+// 6. INPUT HANDLING (PADDLE & ABILITIES) — 0MS PREDICTION & CONTINUOUS 60FPS KEYS
 // ============================================================================
+const activeKeys = {};
+let localPaddleY = ARENA_HEIGHT / 2 - 55;
+let currentYRatio = 0.5;
+let lastSentInputRatio = -1;
+let lastSentInputTime = 0;
+const KEY_MOVE_SPEED = 750; // Snappy & ultra-responsive
+let lastFrameTime = performance.now();
+
+function getLocalPaddleHeight() {
+  if (myRole && latestSnapshot && latestSnapshot.paddles[myRole]) {
+    return latestSnapshot.paddles[myRole].height;
+  }
+  return 110;
+}
+
+function emitPaddleRatio(ratio) {
+  const now = performance.now();
+  currentYRatio = Math.max(0, Math.min(1, ratio));
+  if ((Math.abs(ratio - lastSentInputRatio) > 0.002 && (now - lastSentInputTime >= 15)) || (now - lastSentInputTime >= 120)) {
+    lastSentInputTime = now;
+    lastSentInputRatio = ratio;
+    socket.emit('player:input', { yRatio: ratio });
+  }
+}
+
 function sendPaddleInput(clientY) {
   if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
   const rect = canvas.getBoundingClientRect();
   const relY = clientY - rect.top;
-  const yRatio = Math.max(0, Math.min(1, relY / rect.height));
-  socket.emit('player:input', { yRatio });
+  const myHeight = getLocalPaddleHeight();
+  const paddleScreenHeight = (myHeight / ARENA_HEIGHT) * rect.height;
+
+  // Center paddle directly under pointer
+  let ratio;
+  if (rect.height > paddleScreenHeight) {
+    ratio = (relY - paddleScreenHeight / 2) / (rect.height - paddleScreenHeight);
+  } else {
+    ratio = relY / rect.height;
+  }
+  ratio = Math.max(0, Math.min(1, ratio));
+
+  const maxTravel = ARENA_HEIGHT - myHeight;
+  localPaddleY = ratio * maxTravel;
+  emitPaddleRatio(ratio);
 }
 
 window.addEventListener('mousemove', (e) => sendPaddleInput(e.clientY));
 window.addEventListener('touchmove', (e) => {
+  if (currentScreen === 'screen-hud') {
+    e.preventDefault();
+  }
   if (e.touches.length > 0) sendPaddleInput(e.touches[0].clientY);
-}, { passive: true });
+}, { passive: false });
 window.addEventListener('touchstart', (e) => {
   if (e.touches.length > 0) sendPaddleInput(e.touches[0].clientY);
 }, { passive: true });
 
-// Keyboard Nudge & Ability Shortcuts
-let currentYRatio = 0.5;
+// Keyboard state listeners (Continuous Polling in renderLoop)
 window.addEventListener('keydown', (e) => {
-  if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
-  const step = 0.08;
-  if (e.code === 'KeyW' || e.code === 'ArrowUp') {
-    currentYRatio = Math.max(0, currentYRatio - step);
-    socket.emit('player:input', { yRatio: currentYRatio });
-  } else if (e.code === 'KeyS' || e.code === 'ArrowDown') {
-    currentYRatio = Math.min(1, currentYRatio + step);
-    socket.emit('player:input', { yRatio: currentYRatio });
-  }
+  activeKeys[e.code] = true;
 
+  if (currentScreen !== 'screen-hud' || myRole === 'spectator') return;
+
+  // Ability Hotkeys (No conflict with W/S movement)
   if (e.code === 'Space' || e.code === 'Digit1') triggerAbility('smash');
   else if (e.code === 'KeyQ' || e.code === 'Digit2') triggerAbility('drone');
-  else if (e.code === 'KeyW' || e.code === 'Digit3') triggerAbility('vortex');
+  else if (e.code === 'Digit3' || e.code === 'KeyF') triggerAbility('vortex');
   else if (e.code === 'KeyE' || e.code === 'Digit4') triggerAbility('malware');
   else if (e.code === 'KeyR' || e.code === 'Digit5') triggerAbility('shield');
+});
+
+window.addEventListener('keyup', (e) => {
+  activeKeys[e.code] = false;
+});
+
+window.addEventListener('blur', () => {
+  for (const k in activeKeys) activeKeys[k] = false;
 });
 
 abilityButtons.forEach((btn) => {
@@ -785,16 +840,27 @@ function updateLobbyUI(lobby) {
     guestReadyTag.innerText = lobby.guest.ready ? 'READY' : 'NOT READY';
     guestReadyTag.classList.toggle('is-ready', lobby.guest.ready);
     btnReadyToggle.disabled = false;
+    if (btnAddBot) btnAddBot.classList.add('hidden');
   } else {
     guestNameEl.innerText = 'WAITING FOR OPPONENT...';
     guestReadyTag.innerText = 'WAITING';
     guestReadyTag.classList.remove('is-ready');
     btnReadyToggle.disabled = true;
+    if (btnAddBot) {
+      if (myRole === 'host') {
+        btnAddBot.classList.remove('hidden');
+      } else {
+        btnAddBot.classList.add('hidden');
+      }
+    }
   }
 }
 
 // Countdown Sequence
 socket.on('countdown:start', ({ countdown }) => {
+  localPaddleY = ARENA_HEIGHT / 2 - 55;
+  currentYRatio = 0.5;
+  lastSentInputRatio = -1;
   switchScreen('screen-hud');
   countdownOverlay.classList.remove('hidden');
   countdownNumber.innerText = countdown;
@@ -997,6 +1063,34 @@ let gridOffset = 0;
 function renderLoop() {
   requestAnimationFrame(renderLoop);
 
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
+
+  // 60 FPS Continuous Keyboard Polling for Local Paddle
+  if (currentScreen === 'screen-hud' && myRole && myRole !== 'spectator') {
+    const myHeight = getLocalPaddleHeight();
+    const maxTravel = ARENA_HEIGHT - myHeight;
+    let moved = false;
+
+    if (activeKeys['KeyW'] || activeKeys['ArrowUp']) {
+      localPaddleY -= KEY_MOVE_SPEED * dt;
+      moved = true;
+    }
+    if (activeKeys['KeyS'] || activeKeys['ArrowDown']) {
+      localPaddleY += KEY_MOVE_SPEED * dt;
+      moved = true;
+    }
+
+    if (localPaddleY < 0) localPaddleY = 0;
+    if (localPaddleY > maxTravel) localPaddleY = maxTravel;
+
+    if (moved) {
+      const ratio = maxTravel > 0 ? localPaddleY / maxTravel : 0.5;
+      emitPaddleRatio(ratio);
+    }
+  }
+
   if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -1034,7 +1128,7 @@ function renderLoop() {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Interpolation
+  // Interpolation & 0ms Local Prediction
   if (latestSnapshot) {
     // Multi-balls
     renderState.balls = latestSnapshot.balls.map((sb, idx) => {
@@ -1049,9 +1143,25 @@ function renderLoop() {
 
     const ph = latestSnapshot.paddles.host;
     const pg = latestSnapshot.paddles.guest;
-    renderState.paddles.host.y += (ph.y - renderState.paddles.host.y) * 0.45;
+
+    // Host Paddle Position: Local 0ms prediction if host, otherwise server lerp
+    if (myRole === 'host') {
+      const isMalware = ph.malwareActive;
+      const maxTravel = ARENA_HEIGHT - ph.height;
+      renderState.paddles.host.y = isMalware ? (maxTravel - localPaddleY) : localPaddleY;
+    } else {
+      renderState.paddles.host.y += (ph.y - renderState.paddles.host.y) * 0.45;
+    }
     renderState.paddles.host.height = ph.height;
-    renderState.paddles.guest.y += (pg.y - renderState.paddles.guest.y) * 0.45;
+
+    // Guest Paddle Position: Local 0ms prediction if guest, otherwise server lerp
+    if (myRole === 'guest') {
+      const isMalware = pg.malwareActive;
+      const maxTravel = ARENA_HEIGHT - pg.height;
+      renderState.paddles.guest.y = isMalware ? (maxTravel - localPaddleY) : localPaddleY;
+    } else {
+      renderState.paddles.guest.y += (pg.y - renderState.paddles.guest.y) * 0.45;
+    }
     renderState.paddles.guest.height = pg.height;
 
     renderState.drones.host.active = ph.droneActive;
